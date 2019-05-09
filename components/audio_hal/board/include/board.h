@@ -29,47 +29,48 @@
 #include "board_pins_config.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-#define AUDIO_BOARD_DEFAULT_CONFIG(){                   \
-        .adc_input  = AUDIO_HAL_ADC_INPUT_LINE1,        \
-        .dac_output = AUDIO_HAL_DAC_OUTPUT_ALL,         \
-        .codec_mode = AUDIO_HAL_CODEC_MODE_BOTH,        \
-        .i2s_iface = {                                  \
-            .mode = AUDIO_HAL_MODE_SLAVE,               \
-            .fmt = AUDIO_HAL_I2S_NORMAL,                \
-            .samples = AUDIO_HAL_48K_SAMPLES,           \
-            .bits = AUDIO_HAL_BIT_LENGTH_16BITS,        \
-        },                                              \
+#define AUDIO_BOARD_DEFAULT_CONFIG() {       \
+		.adc_input = AUDIO_HAL_ADC_INPUT_LINE1,  \
+		.dac_output = AUDIO_HAL_DAC_OUTPUT_ALL,  \
+		.codec_mode = AUDIO_HAL_CODEC_MODE_BOTH, \
+		.i2s_iface = {                           \
+				.mode = AUDIO_HAL_MODE_SLAVE,        \
+				.fmt = AUDIO_HAL_I2S_NORMAL,         \
+				.samples = AUDIO_HAL_48K_SAMPLES,    \
+				.bits = AUDIO_HAL_BIT_LENGTH_16BITS, \
+		},                                       \
 };
 
-extern audio_hal_func_t AUDIO_CODEC_DEFAULT_HANDLE;
+/* I2S gpios */
+#define IIS_SCLK 5
+#define IIS_LCLK 25
+#define IIS_DSIN 26
+#define IIS_DOUT 35
 
-/**
+	extern audio_hal_func_t AUDIO_CODEC_DEFAULT_HANDLE;
+
+	/**
  * @brief Audio board handle
  */
-struct audio_board_handle {
-    audio_hal_handle_t audio_hal; /*!< audio hardware abstract layer handle */
-};
+	struct audio_board_handle
+	{
+		audio_hal_handle_t audio_hal; /*!< audio hardware abstract layer handle */
+	};
 
-typedef struct audio_board_handle *audio_board_handle_t;
+	typedef struct audio_board_handle *audio_board_handle_t;
 
-/**
+	/**
  * @brief Initialize audio board
  *
  * @return The audio board handle
  */
-audio_board_handle_t audio_board_init(void);
+	audio_board_handle_t audio_board_init(void);
 
-/**
- * @brief Query audio_board_handle
- *
- * @return The audio board handle
- */
-audio_board_handle_t audio_board_get_handle(void);
-
-/**
+	/**
  * @brief Uninitialize the audio board
  *
  * @param audio_board The handle of audio board
@@ -77,7 +78,7 @@ audio_board_handle_t audio_board_get_handle(void);
  * @return  0       success,
  *          others  fail
  */
-esp_err_t audio_board_deinit(audio_board_handle_t audio_board);
+	esp_err_t audio_borad_deinit(audio_board_handle_t audio_board);
 
 #ifdef __cplusplus
 }
