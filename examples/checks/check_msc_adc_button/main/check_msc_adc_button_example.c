@@ -20,7 +20,7 @@ static const char *TAG = "CHECK_MSC_ADC_BUTTON";
 void app_main(void)
 {
     ESP_LOGI(TAG, "[ 1 ] Initialize peripherals");
-    esp_periph_config_t periph_cfg = DEFAULT_ESP_PHERIPH_SET_CONFIG();
+    esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
     esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
 
     ESP_LOGI(TAG, "[1.1] Initialize ADC Button peripheral");
@@ -42,7 +42,7 @@ void app_main(void)
 
 
     while (1) {
-        char *btn_states[] = {"idle", "click", "pressed", "released"};
+        char *btn_states[] = {"idle", "click", "click released", "press", "press released"};
 
         audio_event_iface_msg_t msg;
         esp_err_t ret = audio_event_iface_listen(evt, &msg, portMAX_DELAY);
@@ -52,7 +52,7 @@ void app_main(void)
         }
 
         if (msg.source_type == PERIPH_ID_ADC_BTN) {
-            int button_id = msg.data_len;  // button id is sent as data_len
+            int button_id = (int)msg.data;  // button id is sent as data_len
             int state     = msg.cmd;       // button state is sent as cmd
             switch (button_id) {
                 case USER_KEY_ID0:
