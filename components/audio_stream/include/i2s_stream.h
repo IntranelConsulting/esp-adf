@@ -46,7 +46,8 @@ typedef struct {
     int                     task_stack;         /*!< Task stack size */
     int                     task_core;          /*!< Task running in core (0 or 1) */
     int                     task_prio;          /*!< Task priority (based on freeRTOS priority) */
-} i2s_stream_cfg_t;
+        i2s_pin_config_t i2s_pin_config;
+    } i2s_stream_cfg_t;
 
 #define I2S_STREAM_TASK_STACK           (3072)
 #define I2S_STREAM_BUF_SIZE             (2048)
