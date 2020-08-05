@@ -25,13 +25,17 @@
 #ifndef _PERIPH_ADC_BUTTON_H_
 #define _PERIPH_ADC_BUTTON_H_
 
+#include "driver/adc.h"
+#include "adc_button.h"
+#include "esp_peripherals.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include "driver/adc.h"
-#include "adc_button.h"
-#include "esp_peripherals.h"
+#define ADC_BUTTON_STACK_SIZE           2500
+#define ADC_BUTTON_TASK_PRIORITY        10
+#define ADC_BUTTON_TASK_CORE_ID         0
 
 /**
  * @brief      The configuration of ADC Button
@@ -39,7 +43,17 @@ extern "C" {
 typedef struct {
     adc_arr_t *arr;  /*!< An array with configuration of buttons */
     int arr_size;    /*!< The array size */
+    adc_btn_task_cfg_t task_cfg; /*!< Adc button task configuration */
 } periph_adc_button_cfg_t;
+
+#define PERIPH_ADC_BUTTON_DEFAULT_CONFIG() {   \
+    .task_cfg = {                              \
+        .task_stack = ADC_BUTTON_STACK_SIZE,   \
+        .task_core  = ADC_BUTTON_TASK_CORE_ID, \
+        .task_prio  = ADC_BUTTON_TASK_PRIORITY,\
+        .ext_stack  = false                    \
+    }                                          \
+}
 
 typedef enum {
     PERIPH_ADC_BUTTON_IDLE = 0,
@@ -48,6 +62,19 @@ typedef enum {
     PERIPH_ADC_BUTTON_LONG_PRESSED,
     PERIPH_ADC_BUTTON_LONG_RELEASE,
 } periph_adc_button_event_id_t;
+
+/**
+* ESP32 ADC1 channels and GPIO table
+*   ADC1_CHANNEL_0 -  GPIO36
+*   ADC1_CHANNEL_1 -  GPIO37
+*   ADC1_CHANNEL_2 -  GPIO38
+*   ADC1_CHANNEL_3 -  GPIO39
+*   ADC1_CHANNEL_4 -  GPIO32
+*   ADC1_CHANNEL_5 -  GPIO33
+*   ADC1_CHANNEL_6 -  GPIO34
+*   ADC1_CHANNEL_7 -  GPIO35
+*
+**/
 
 #define ADC_DEFAULT_ARR() {   \
     .adc_ch = ADC1_CHANNEL_3, \

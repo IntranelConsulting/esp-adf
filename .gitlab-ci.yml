@@ -35,6 +35,7 @@ before_script:
   - sed -i "s%https://github.com/espressif/esp-idf%${GITLAB_SSH_SERVER}/idf/esp-idf.git%" .gitmodules
   # replace submodule esp-adf-libs to internal repository to speedup cloning
   - sed -i "s%https://github.com/espressif/esp-adf-libs%${GITLAB_SSH_SERVER}/adf/esp-adf-libs.git%" .gitmodules
+  - sed -i "s%https://github.com/espressif/esp-sr.git%${GITLAB_SSH_SERVER}/speech-recognition-internal/esp_sr_public.git%" .gitmodules
   - git submodule update --init
   # (the same regular expressions are used to set these are used in 'only:' sections below
   - source esp-idf/tools/ci/configure_ci_environment.sh
@@ -92,6 +93,15 @@ before_script:
 build_examples_00:
   <<: *build_examples_template
 
+build_examples_01:
+  <<: *build_examples_template
+
+build_examples_02:
+  <<: *build_examples_template
+
+build_examples_03:
+  <<: *build_examples_template
+
 build_adf_test:
   <<: *build_template
   artifacts:
@@ -122,17 +132,29 @@ build_docs:
   artifacts:
     when: always
     paths:
+      # English version of documentation
       - docs/en/doxygen-warning-log.txt
       - docs/en/sphinx-warning-log.txt
       - docs/en/sphinx-warning-log-sanitized.txt
       - docs/en/_build/html
+      - docs/sphinx-err-*
+      # Chinese version of documentation
+      - docs/zh_CN/doxygen-warning-log.txt
+      - docs/zh_CN/sphinx-warning-log.txt
+      - docs/zh_CN/sphinx-warning-log-sanitized.txt
+      - docs/zh_CN/_build/html
     expire_in: 1 mos
   script:
-    - cd docs/en
+    - cd docs
+    - ./check_lang_folder_sync.sh
+    - cd en
     - make gh-linkcheck
     - make html
     - ../check_doc_warnings.sh
-
+    - cd ../zh_CN
+    - make gh-linkcheck
+    - make html
+    - ../check_doc_warnings.sh
 assign_test:
   tags:
     - assign_test
@@ -192,7 +214,7 @@ assign_test:
     - ESP32
     - Example_AUDIO_PLAY
 
-push_master_to_github:
+push_to_github:
   stage: deploy
   only:
     - master
@@ -201,7 +223,6 @@ push_master_to_github:
   image: $CI_DOCKER_REGISTRY/esp32-ci-env
   variables:
     GIT_STRATEGY: clone
-    GITHUB_PUSH_REFS: refs/remotes/origin/release refs/remotes/origin/master
   before_script:
     - echo "skip default before_script"
   script:
@@ -211,12 +232,7 @@ push_master_to_github:
     - base64 --decode --ignore-garbage ~/.ssh/id_rsa_base64 > ~/.ssh/id_rsa
     - chmod 600 ~/.ssh/id_rsa
     - echo -e "Host github.com\n\tStrictHostKeyChecking no\n" >> ~/.ssh/config
+    - git remote remove github &>/dev/null || true
     - git remote add github git@github.com:espressif/esp-adf.git
-    # What the next line of script does: goes through the list of refs for all branches we push to github,
-    # generates a snippet of shell which is evaluated. The snippet checks CI_BUILD_REF against the SHA
-    # (aka objectname) at tip of each branch, and if any SHAs match then it checks out the local branch
-    # and then pushes that ref to a corresponding github branch
-    #
-    # NB: In gitlab 9.x, CI_BUILD_REF was deprecated. New name is CI_COMMIT_REF. If below command suddenly
-    # generates bash syntax errors, this is probably why.
-    - eval $(git for-each-ref --shell bash --format 'if [ $CI_BUILD_REF == %(objectname) ]; then git checkout -B %(refname:strip=3); git push --follow-tags github %(refname:strip=3); fi;' $GITHUB_PUSH_REFS)
+    - tools/ci/push_to_github.sh
+

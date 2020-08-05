@@ -1,7 +1,7 @@
 /*
  * ESPRESSIF MIT License
  *
- * Copyright (c) 2019 <ESPRESSIF SYSTEMS (SHANGHAI) PTE LTD>
+ * Copyright (c) 2019 <ESPRESSIF SYSTEMS (SHANGHAI) CO., LTD>
  *
  * Permission is hereby granted for use on all ESPRESSIF SYSTEMS products, in which case,
  * it is free of charge, to any person obtaining a copy of this software and associated
@@ -27,6 +27,10 @@
 
 #include "display_service.h"
 #include "esp_peripherals.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /**
  * @brief      Initialize esp_periph_handle_t instance
@@ -62,5 +66,9 @@ esp_err_t led_bar_is31x_pattern(void *handle, int pat, int value);
  *     - ESP_FAIL
  */
 void led_bar_is31x_deinit(esp_periph_handle_t handle);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

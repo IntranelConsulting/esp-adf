@@ -22,23 +22,12 @@
  *
  */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/time.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/queue.h"
-#include "soc/soc.h"
-#include "soc/rtc_cntl_reg.h"
-#include "soc/sens_reg.h"
 #include "esp_log.h"
-#include "esp_system.h"
+#include "audio_mem.h"
 #include "esp_spiffs.h"
-#include "board.h"
 #include "periph_spiffs.h"
 
-static const char* TAG = "PERIPH_SPIFFS";
+static const char *TAG = "PERIPH_SPIFFS";
 
 #define VALIDATE_SPIFFS(periph, ret) if (!(periph && esp_periph_get_id(periph) == PERIPH_ID_SPIFFS)) { \
     ESP_LOGE(TAG, "Invalid SPIFFS periph, at line %d", __LINE__);\
@@ -79,11 +68,11 @@ static esp_err_t _spiffs_destroy(esp_periph_handle_t self)
     }
 
     periph_spiffs_t *spiffs = esp_periph_get_data(self);
-    free(spiffs->root);
-    if(spiffs->partition_label != NULL) {
-        free(spiffs->partition_label);
+    audio_free(spiffs->root);
+    if (spiffs->partition_label != NULL) {
+        audio_free(spiffs->partition_label);
     }
-    free(spiffs);
+    audio_free(spiffs);
     return ret;
 }
 
@@ -94,10 +83,10 @@ esp_err_t periph_spiffs_mount(esp_periph_handle_t periph)
     periph_spiffs_t *spiffs = esp_periph_get_data(periph);
 
     esp_vfs_spiffs_conf_t conf = {
-      .base_path = spiffs->root,
-      .partition_label = spiffs->partition_label,
-      .max_files = spiffs->max_files,
-      .format_if_mount_failed = spiffs->format_if_mount_failed
+        .base_path = spiffs->root,
+        .partition_label = spiffs->partition_label,
+        .max_files = spiffs->max_files,
+        .format_if_mount_failed = spiffs->format_if_mount_failed
     };
 
     // Use settings defined above to initialize and mount SPIFFS filesystem.
@@ -112,7 +101,7 @@ esp_err_t periph_spiffs_mount(esp_periph_handle_t periph)
         } else {
             ESP_LOGE(TAG, "Failed to initialize SPIFFS (%d)", ret);
         }
-        return NULL;
+        return ESP_FAIL;
     }
 
     if (ret == ESP_OK) {
@@ -142,10 +131,6 @@ esp_err_t periph_spiffs_unmount(esp_periph_handle_t periph)
     VALIDATE_SPIFFS(periph, ESP_FAIL);
     periph_spiffs_t *spiffs = esp_periph_get_data(periph);
 
-    if (spiffs->partition_label == NULL) {
-        spiffs->partition_label = strdup("/spiffs");
-    }
-
     int ret = esp_vfs_spiffs_unregister(spiffs->partition_label);
     if (ret == ESP_OK) {
         ESP_LOGD(TAG, "Unmount SPIFFS success");
@@ -160,21 +145,21 @@ esp_err_t periph_spiffs_unmount(esp_periph_handle_t periph)
     return ESP_OK;
 }
 
-esp_periph_handle_t periph_spiffs_init(periph_spiffs_cfg_t* spiffs_cfg)
+esp_periph_handle_t periph_spiffs_init(periph_spiffs_cfg_t *spiffs_cfg)
 {
     esp_periph_handle_t periph = esp_periph_create(PERIPH_ID_SPIFFS, "periph_spiffs");
     AUDIO_MEM_CHECK(TAG, periph, return NULL);
 
-    periph_spiffs_t *spiffs = calloc(1, sizeof(periph_spiffs_t));
+    periph_spiffs_t *spiffs = audio_calloc(1, sizeof(periph_spiffs_t));
     AUDIO_MEM_CHECK(TAG, spiffs, return NULL);
     if (spiffs_cfg->root) {
-        spiffs->root = strdup(spiffs_cfg->root);
+        spiffs->root = audio_strdup(spiffs_cfg->root);
     } else {
-        spiffs->root = strdup("/spiffs");
+        spiffs->root = audio_strdup("/spiffs");
     }
 
     if (spiffs_cfg->partition_label) {
-        spiffs->partition_label = strdup(spiffs_cfg->partition_label);
+        spiffs->partition_label = audio_strdup(spiffs_cfg->partition_label);
     } else {
         spiffs->partition_label = NULL;
     }
@@ -188,7 +173,7 @@ esp_periph_handle_t periph_spiffs_init(periph_spiffs_cfg_t* spiffs_cfg)
     spiffs->format_if_mount_failed = spiffs_cfg->format_if_mount_failed;
 
     AUDIO_MEM_CHECK(TAG, spiffs->root, {
-        free(spiffs);
+        audio_free(spiffs);
         return NULL;
     });
 

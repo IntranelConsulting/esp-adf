@@ -27,6 +27,10 @@
 
 #include "audio_hal.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Initialize ZL38063 chip
  *
@@ -74,6 +78,18 @@ esp_err_t zl38063_codec_ctrl_state(audio_hal_codec_mode_t mode, audio_hal_ctrl_t
  *     - ESP_OK   Success
  */
 esp_err_t zl38063_codec_config_i2s(audio_hal_codec_mode_t mode, audio_hal_codec_i2s_iface_t *iface);
+
+/**
+ * @brief mute or unmute the codec
+ *
+ * @param mute:  true, false
+ *
+ * @return
+ *     - ESP_OK
+ *     - ESP_FAIL
+ */
+esp_err_t zl38063_codec_set_voice_mute(bool mute);
+
 /**
  * @brief  Set voice volume
  *
@@ -84,6 +100,7 @@ esp_err_t zl38063_codec_config_i2s(audio_hal_codec_mode_t mode, audio_hal_codec_
  *     - ESP_FAIL
  */
 esp_err_t zl38063_codec_set_voice_volume(int volume);
+
 /**
  * @brief Get voice volume
  *
@@ -94,5 +111,9 @@ esp_err_t zl38063_codec_set_voice_volume(int volume);
  *     - ESP_FAIL
  */
 esp_err_t zl38063_codec_get_voice_volume(int *volume);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -1,7 +1,7 @@
 /*
  * ESPRESSIF MIT License
  *
- * Copyright (c) 2019 <ESPRESSIF SYSTEMS (SHANGHAI) CO. LTD>
+ * Copyright (c) 2019 <ESPRESSIF SYSTEMS (SHANGHAI) CO., LTD>
  *
  * Permission is hereby granted for use on all ESPRESSIF SYSTEMS products, in which case,
  * it is free of charge, to any person obtaining a copy of this software and associated
@@ -41,6 +41,42 @@ extern "C" {
  *     - Others, Success
  */
 esp_wifi_setting_handle_t blufi_config_create(void *info);
+
+/**
+ * @brief      Set flag to judge whether the station has connected to the AP
+ *
+ * @param[in]  handle   Wifi setting handle
+ * @param[in]  flag     bool type of station connection state
+ *
+ * @return
+ *     - NULL, Fail
+ *     - Others, Success
+ */
+esp_err_t blufi_set_sta_connected_flag(esp_wifi_setting_handle_t handle, bool flag);
+
+/**
+ * @brief      Set customized data to be sent after configurate wifi successfully.
+ *
+ * @param[in]  handle   Wifi setting handle
+ * @param[in]  data     Customized data
+ * @param[in]  data_len Customized data length
+
+ * @return
+ *     - ESP_FAIL, Fail
+ *     - ESP_OK, Success
+ */
+esp_err_t blufi_set_customized_data(esp_wifi_setting_handle_t handle, char *data, int data_len);
+
+/**
+ * @brief      Send customized data that be set before
+ *
+ * @param[in]  handle   Wifi setting handle
+
+ * @return
+ *     - ESP_FAIL, Fail
+ *     - ESP_OK, Success
+ */
+esp_err_t blufi_send_customized_data(esp_wifi_setting_handle_t handle);
 
 #ifdef __cplusplus
 }

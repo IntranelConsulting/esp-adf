@@ -40,18 +40,7 @@ void app_main(void)
     esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
 
     // Initialize SD Card peripheral
-    periph_sdcard_cfg_t sdcard_cfg = {
-        .root = "/sdcard",
-        .card_detect_pin = get_sdcard_intr_gpio(), //GPIO_NUM_34
-    };
-    esp_periph_handle_t sdcard_handle = periph_sdcard_init(&sdcard_cfg);
-    // Start sdcard & button peripheral
-    esp_periph_start(set, sdcard_handle);
-
-    // Wait until sdcard is mounted
-    while (!periph_sdcard_is_mounted(sdcard_handle)) {
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
+    audio_board_sdcard_init(set);
 
     ESP_LOGI(TAG, "[ 2 ] Start codec chip");
     audio_board_handle_t board_handle = audio_board_init();
@@ -82,11 +71,11 @@ void app_main(void)
     audio_pipeline_register(pipeline, i2s_stream_writer, "i2s");
 
     ESP_LOGI(TAG, "[3.5] Link it together [sdcard]-->fatfs_stream-->mp3_decoder-->i2s_stream-->[codec_chip]");
-    audio_pipeline_link(pipeline, (const char *[]) {"file", "mp3", "i2s"}, 3);
+    const char *link_tag[3] = {"file", "mp3", "i2s"};
+    audio_pipeline_link(pipeline, &link_tag[0], 3);
 
     ESP_LOGI(TAG, "[3.6] Set up  uri (file as fatfs_stream, mp3 as mp3 decoder, and default output is i2s)");
     audio_element_set_uri(fatfs_stream_reader, "/sdcard/test.mp3");
-
 
     ESP_LOGI(TAG, "[ 4 ] Set up  event listener");
     audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
@@ -97,7 +86,6 @@ void app_main(void)
 
     ESP_LOGI(TAG, "[4.2] Listening event from peripherals");
     audio_event_iface_set_listener(esp_periph_set_get_event_iface(set), evt);
-
 
     ESP_LOGI(TAG, "[ 5 ] Start audio_pipeline");
     audio_pipeline_run(pipeline);
@@ -126,13 +114,16 @@ void app_main(void)
 
         /* Stop when the last pipeline element (i2s_stream_writer in this case) receives stop event */
         if (msg.source_type == AUDIO_ELEMENT_TYPE_ELEMENT && msg.source == (void *) i2s_stream_writer
-            && msg.cmd == AEL_MSG_CMD_REPORT_STATUS && (int) msg.data == AEL_STATUS_STATE_STOPPED) {
+            && msg.cmd == AEL_MSG_CMD_REPORT_STATUS
+            && (((int)msg.data == AEL_STATUS_STATE_STOPPED) || ((int)msg.data == AEL_STATUS_STATE_FINISHED))) {
             ESP_LOGW(TAG, "[ * ] Stop event received");
             break;
         }
     }
 
     ESP_LOGI(TAG, "[ 7 ] Stop audio_pipeline");
+    audio_pipeline_stop(pipeline);
+    audio_pipeline_wait_for_stop(pipeline);
     audio_pipeline_terminate(pipeline);
 
     audio_pipeline_unregister(pipeline, fatfs_stream_reader);

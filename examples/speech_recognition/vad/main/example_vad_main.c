@@ -47,6 +47,9 @@ void app_main()
     i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
     i2s_cfg.i2s_config.sample_rate = 48000;
     i2s_cfg.type = AUDIO_STREAM_READER;
+#if defined CONFIG_ESP_LYRAT_MINI_V1_1_BOARD
+    i2s_cfg.i2s_port = 1;
+#endif
     i2s_stream_reader = i2s_stream_init(&i2s_cfg);
 
     ESP_LOGI(TAG, "[2.2] Create filter to resample audio data");
@@ -55,7 +58,6 @@ void app_main()
     rsp_cfg.src_ch = 2;
     rsp_cfg.dest_rate = VAD_SAMPLE_RATE_HZ;
     rsp_cfg.dest_ch = 1;
-    rsp_cfg.type = AUDIO_CODEC_TYPE_ENCODER;
     filter = rsp_filter_init(&rsp_cfg);
 
     ESP_LOGI(TAG, "[2.3] Create raw to receive data");
@@ -71,7 +73,8 @@ void app_main()
     audio_pipeline_register(pipeline, raw_read, "raw");
 
     ESP_LOGI(TAG, "[ 4 ] Link elements together [codec_chip]-->i2s_stream-->filter-->raw-->[VAD]");
-    audio_pipeline_link(pipeline, (const char *[]) {"i2s", "filter", "raw"}, 3);
+    const char *link_tag[3] = {"i2s", "filter", "raw"};
+    audio_pipeline_link(pipeline, &link_tag[0], 3);
 
     ESP_LOGI(TAG, "[ 5 ] Start audio_pipeline");
     audio_pipeline_run(pipeline);
@@ -104,6 +107,8 @@ abort_speech_detection:
     vad_destroy(vad_inst);
 
     ESP_LOGI(TAG, "[ 8 ] Stop audio_pipeline and release all resources");
+    audio_pipeline_stop(pipeline);
+    audio_pipeline_wait_for_stop(pipeline);
     audio_pipeline_terminate(pipeline);
 
     /* Terminate the pipeline before removing the listener */

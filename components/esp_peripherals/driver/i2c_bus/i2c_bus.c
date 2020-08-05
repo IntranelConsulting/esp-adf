@@ -27,6 +27,7 @@
 #include "driver/i2c.h"
 #include "i2c_bus.h"
 #include "audio_mutex.h"
+#include "audio_mem.h"
 
 #define ESP_INTR_FLG_DEFAULT  (0)
 #define ESP_I2C_MASTER_BUF_LEN  (0)
@@ -56,7 +57,7 @@ i2c_bus_handle_t i2c_bus_create(i2c_port_t port, i2c_config_t *conf)
         ESP_LOGW(TAG, "%s:%d: I2C bus has been already created, [port:%d]", __FUNCTION__, __LINE__, port);
         return i2c_bus[port];
     }
-    i2c_bus[port] = (i2c_bus_t *) calloc(1, sizeof(i2c_bus_t));
+    i2c_bus[port] = (i2c_bus_t *) audio_calloc(1, sizeof(i2c_bus_t));
     i2c_bus[port]->i2c_conf = *conf;
     i2c_bus[port]->i2c_port = port;
     esp_err_t ret = i2c_param_config(i2c_bus[port]->i2c_port, &i2c_bus[port]->i2c_conf);
@@ -75,14 +76,16 @@ i2c_bus_handle_t i2c_bus_create(i2c_port_t port, i2c_config_t *conf)
 
 error:
     if (i2c_bus[port]) {
-        free(i2c_bus[port]);
+        audio_free(i2c_bus[port]);
     }
     return NULL;
 }
 
-esp_err_t i2c_bus_write_bytes(i2c_port_t port, int addr, uint8_t *reg, int regLen, uint8_t *data, int datalen)
+esp_err_t i2c_bus_write_bytes(i2c_bus_handle_t bus, int addr, uint8_t *reg, int regLen, uint8_t *data, int datalen)
 {
-    I2C_BUS_CHECK(port < I2C_NUM_MAX, "I2C port error", ESP_FAIL);
+    I2C_BUS_CHECK(bus != NULL, "Handle error", ESP_FAIL);
+    i2c_bus_t *p_bus = (i2c_bus_t *) bus;
+    I2C_BUS_CHECK(p_bus->i2c_port < I2C_NUM_MAX, "I2C port error", ESP_FAIL);
     I2C_BUS_CHECK(data != NULL, "Not initialized input data pointer", ESP_FAIL);
     esp_err_t ret = ESP_OK;
     mutex_lock(_busLock);
@@ -92,16 +95,18 @@ esp_err_t i2c_bus_write_bytes(i2c_port_t port, int addr, uint8_t *reg, int regLe
     ret |= i2c_master_write(cmd, reg, regLen, I2C_ACK_CHECK_EN);
     ret |= i2c_master_write(cmd, data, datalen, I2C_ACK_CHECK_EN);
     ret |= i2c_master_stop(cmd);
-    ret |= i2c_master_cmd_begin(port, cmd, 1000 / portTICK_RATE_MS);
+    ret |= i2c_master_cmd_begin(p_bus->i2c_port, cmd, 1000 / portTICK_RATE_MS);
     i2c_cmd_link_delete(cmd);
     mutex_unlock(_busLock);
     I2C_BUS_CHECK(ret == 0, "I2C Bus WriteReg Error", ESP_FAIL);
     return ret;
 }
 
-esp_err_t i2c_bus_write_data(i2c_port_t port, int addr, uint8_t *data, int datalen)
+esp_err_t i2c_bus_write_data(i2c_bus_handle_t bus, int addr, uint8_t *data, int datalen)
 {
-    I2C_BUS_CHECK(port < I2C_NUM_MAX, "I2C port error", ESP_FAIL);
+    I2C_BUS_CHECK(bus != NULL, "Handle error", ESP_FAIL);
+    i2c_bus_t *p_bus = (i2c_bus_t *) bus;
+    I2C_BUS_CHECK(p_bus->i2c_port < I2C_NUM_MAX, "I2C port error", ESP_FAIL);
     I2C_BUS_CHECK(data != NULL, "Not initialized input data pointer", ESP_FAIL);
     esp_err_t ret = ESP_OK;
     mutex_lock(_busLock);
@@ -110,16 +115,18 @@ esp_err_t i2c_bus_write_data(i2c_port_t port, int addr, uint8_t *data, int datal
     ret |= i2c_master_write_byte(cmd, addr, 1);
     ret |= i2c_master_write(cmd, data, datalen, I2C_ACK_CHECK_EN);
     ret |= i2c_master_stop(cmd);
-    ret |= i2c_master_cmd_begin(port, cmd, 1000 / portTICK_RATE_MS);
+    ret |= i2c_master_cmd_begin(p_bus->i2c_port, cmd, 1000 / portTICK_RATE_MS);
     i2c_cmd_link_delete(cmd);
     mutex_unlock(_busLock);
     I2C_BUS_CHECK(ret == 0, "I2C Bus WriteReg Error", ESP_FAIL);
     return ret;
 }
 
-esp_err_t i2c_bus_read_bytes(i2c_port_t port, int addr, uint8_t *outdata, int len)
+esp_err_t i2c_bus_read_bytes(i2c_bus_handle_t bus, int addr, uint8_t *reg, int reglen, uint8_t *outdata, int datalen)
 {
-    I2C_BUS_CHECK(port < I2C_NUM_MAX, "I2C port error", ESP_FAIL);
+    I2C_BUS_CHECK(bus != NULL, "Handle error", ESP_FAIL);
+    i2c_bus_t *p_bus = (i2c_bus_t *) bus;
+    I2C_BUS_CHECK(p_bus->i2c_port < I2C_NUM_MAX, "I2C port error", ESP_FAIL);
     I2C_BUS_CHECK(outdata != NULL, "Not initialized output data buffer pointer", ESP_FAIL);
     esp_err_t ret = ESP_OK;
     mutex_lock(_busLock);
@@ -127,13 +134,24 @@ esp_err_t i2c_bus_read_bytes(i2c_port_t port, int addr, uint8_t *outdata, int le
     cmd = i2c_cmd_link_create();
     ret |= i2c_master_start(cmd);
     ret |= i2c_master_write_byte(cmd, addr, I2C_ACK_CHECK_EN);
-    for (int i = 0; i < len - 1; i++) {
+    ret |= i2c_master_write(cmd, reg, reglen, I2C_ACK_CHECK_EN);
+    ret |= i2c_master_stop(cmd);
+    ret |= i2c_master_cmd_begin(p_bus->i2c_port, cmd, 1000 / portTICK_RATE_MS);
+    i2c_cmd_link_delete(cmd);
+
+    cmd = i2c_cmd_link_create();
+    ret |= i2c_master_start(cmd);
+    ret |= i2c_master_write_byte(cmd, addr | 0x01, I2C_ACK_CHECK_EN);
+
+    for (int i = 0; i < datalen - 1; i++) {
         ret |= i2c_master_read_byte(cmd, &outdata[i], 0);
     }
-    ret |= i2c_master_read_byte(cmd, &outdata[len - 1], 1);
-    ret |= i2c_master_stop(cmd);
-    ret |= i2c_master_cmd_begin(port, cmd, 1000 / portTICK_RATE_MS);
+    ret |= i2c_master_read_byte(cmd, &outdata[datalen - 1], 1);
+
+    ret = i2c_master_stop(cmd);
+    ret = i2c_master_cmd_begin(p_bus->i2c_port, cmd, 1000 / portTICK_RATE_MS);
     i2c_cmd_link_delete(cmd);
+
     mutex_unlock(_busLock);
     I2C_BUS_CHECK(ret == 0, "I2C Bus ReadReg Error", ESP_FAIL);
     return ret;
@@ -144,8 +162,8 @@ esp_err_t i2c_bus_delete(i2c_bus_handle_t bus)
     I2C_BUS_CHECK(bus != NULL, "Handle error", ESP_FAIL);
     i2c_bus_t *p_bus = (i2c_bus_t *) bus;
     i2c_driver_delete(p_bus->i2c_port);
-    free(p_bus);
     i2c_bus[p_bus->i2c_port] = NULL;
+    audio_free(p_bus);
     mutex_destroy(_busLock);
 
     _busLock = NULL;

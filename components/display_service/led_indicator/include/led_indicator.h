@@ -1,7 +1,7 @@
 /*
  * ESPRESSIF MIT License
  *
- * Copyright (c) 2019 <ESPRESSIF SYSTEMS (SHANGHAI) PTE LTD>
+ * Copyright (c) 2019 <ESPRESSIF SYSTEMS (SHANGHAI) CO., LTD>
  *
  * Permission is hereby granted for use on all ESPRESSIF SYSTEMS products, in which case,
  * it is free of charge, to any person obtaining a copy of this software and associated
@@ -26,6 +26,10 @@
 #define _LED_INDICATOR_H_
 
 #include "display_service.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct led_indicator_impl *led_indicator_handle_t;
 
@@ -63,6 +67,10 @@ esp_err_t led_indicator_pattern(void *handle, int pat, int value);
  *     - ESP_FAIL
  */
 void led_indicator_deinit(led_indicator_handle_t handle);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 

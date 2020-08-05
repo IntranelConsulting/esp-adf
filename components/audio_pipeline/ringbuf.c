@@ -93,15 +93,19 @@ esp_err_t rb_destroy(ringbuf_handle_t rb)
     }
     if (rb->p_o) {
         audio_free(rb->p_o);
+        rb->p_o = NULL;
     }
     if (rb->can_read) {
         vSemaphoreDelete(rb->can_read);
+        rb->can_read = NULL;
     }
     if (rb->can_write) {
         vSemaphoreDelete(rb->can_write);
+        rb->can_write = NULL;
     }
     if (rb->lock) {
         vSemaphoreDelete(rb->lock);
+        rb->lock = NULL;
     }
     audio_free(rb);
     rb = NULL;
@@ -165,6 +169,9 @@ int rb_read(ringbuf_handle_t rb, char *buf, int buf_len, TickType_t ticks_to_wai
              * Note that, when we have buf_len bytes available in rb, we still read those irrespective of if it's multiple of 4.
              */
             read_size = read_size & 0xfffffffc;
+            if ((read_size == 0) && rb->is_done_write) {
+                read_size = rb->fill_cnt;
+            }
         } else {
             read_size = buf_len;
         }
@@ -341,14 +348,6 @@ bool rb_is_full(ringbuf_handle_t rb)
         return false;
     }
     return (rb->size == rb->fill_cnt);
-}
-
-int rb_size_get(ringbuf_handle_t rb)
-{
-    if (rb == NULL) {
-        return 0;
-    }
-    return (rb->size);
 }
 
 esp_err_t rb_done_write(ringbuf_handle_t rb)

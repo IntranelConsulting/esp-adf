@@ -41,18 +41,7 @@ void app_main(void)
     esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
 
     // Initialize SD Card peripheral
-    periph_sdcard_cfg_t sdcard_cfg = {
-        .root = "/sdcard",
-        .card_detect_pin = get_sdcard_intr_gpio(), //GPIO_NUM_34
-    };
-    esp_periph_handle_t sdcard_handle = periph_sdcard_init(&sdcard_cfg);
-    // Start sdcard & button peripheral
-    esp_periph_start(set, sdcard_handle);
-
-    // Wait until sdcard is mounted
-    while (!periph_sdcard_is_mounted(sdcard_handle)) {
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
+    audio_board_sdcard_init(set);
 
     ESP_LOGI(TAG, "[2.0] Start codec chip");
     audio_board_handle_t board_handle = audio_board_init();
@@ -77,6 +66,9 @@ void app_main(void)
 #endif
     i2s_cfg.i2s_config.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;
     i2s_cfg.type = AUDIO_STREAM_READER;
+#if defined CONFIG_ESP_LYRAT_MINI_V1_1_BOARD
+    i2s_cfg.i2s_port = 1;
+#endif
     i2s_stream_reader = i2s_stream_init(&i2s_cfg);
 
     ESP_LOGI(TAG, "[3.3] Create amr encoder to encode amr format");
@@ -104,13 +96,11 @@ void app_main(void)
     ESP_LOGI(TAG, "[3.5] Link it together [codec_chip]-->i2s_stream-->amr_encoder-->fatfs_stream-->[sdcard]");
 
 #ifdef CONFIG_CHOICE_AMR_WB
-    audio_pipeline_link(pipeline, (const char *[]) {
-        "i2s", "Wamr", "file"
-    }, 3);
+    const char *link_tag[3] = {"i2s", "Wamr", "file"};
+    audio_pipeline_link(pipeline, &link_tag[0], 3);
 #elif defined CONFIG_CHOICE_AMR_NB
-    audio_pipeline_link(pipeline, (const char *[]) {
-        "i2s", "amr", "file"
-    }, 3);
+    const char *link_tag[3] = {"i2s", "amr", "file"};
+    audio_pipeline_link(pipeline, &link_tag[0], 3);
 #endif
     ESP_LOGI(TAG, "[3.6] Set up  uri (file as fatfs_stream, amr as amr encoder)");
 #ifdef CONFIG_CHOICE_AMR_WB
@@ -146,12 +136,16 @@ void app_main(void)
         }
 
         /* Stop when the last pipeline element (i2s_stream_reader in this case) receives stop event */
-        if (msg.source_type == AUDIO_ELEMENT_TYPE_ELEMENT && msg.source == (void *)i2s_stream_reader && msg.cmd == AEL_MSG_CMD_REPORT_STATUS && (int)msg.data == AEL_STATUS_STATE_STOPPED) {
+        if (msg.source_type == AUDIO_ELEMENT_TYPE_ELEMENT && msg.source == (void *)i2s_stream_reader
+            && msg.cmd == AEL_MSG_CMD_REPORT_STATUS
+            && (((int)msg.data == AEL_STATUS_STATE_STOPPED) || ((int)msg.data == AEL_STATUS_STATE_FINISHED))) {
             ESP_LOGW(TAG, "[ * ] Stop event received");
             break;
         }
     }
     ESP_LOGI(TAG, "[7.0] Stop audio_pipeline");
+    audio_pipeline_stop(pipeline);
+    audio_pipeline_wait_for_stop(pipeline);
     audio_pipeline_terminate(pipeline);
 
     /* Terminate the pipeline before removing the listener */

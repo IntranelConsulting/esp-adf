@@ -1,7 +1,7 @@
 /*
  * ESPRESSIF MIT License
  *
- * Copyright (c) 2019 <ESPRESSIF SYSTEMS (SHANGHAI) PTE LTD>
+ * Copyright (c) 2019 <ESPRESSIF SYSTEMS (SHANGHAI) CO., LTD>
  *
  * Permission is hereby granted for use on all ESPRESSIF SYSTEMS products, in which case,
  * it is free of charge, to any person obtaining a copy of this software and associated
@@ -53,25 +53,27 @@ led_indicator_handle_t led_indicator_init(gpio_num_t num)
 
 esp_err_t led_indicator_pattern(void *handle, int pat, int value)
 {
+    AUDIO_NULL_CHECK(TAG, handle, return ESP_FAIL);
     led_indicator_handle_t h = (led_indicator_handle_t)handle;
     ESP_LOGD(TAG, "pat:%d, gpio:%d", pat, h->gpio_num);
     switch (pat) {
         case DISPLAY_PATTERN_WIFI_SETTING:
-            periph_led_blink(h->periph_handle, h->gpio_num, 500, 500, false, -1);
+            periph_led_blink(h->periph_handle, h->gpio_num, 500, 500, false, -1, value);
             break;
         case DISPLAY_PATTERN_WIFI_CONNECTED:
-            periph_led_blink(h->periph_handle, h->gpio_num, 1000, 200, true, 10);
+            periph_led_blink(h->periph_handle, h->gpio_num, 1000, 200, true, 10, value);
             break;
         case DISPLAY_PATTERN_WIFI_DISCONNECTED:
-            periph_led_blink(h->periph_handle, h->gpio_num, 200, 500, false, -1);
+            periph_led_blink(h->periph_handle, h->gpio_num, 200, 500, false, -1, value);
             break;
         case DISPLAY_PATTERN_TURN_ON:
-            periph_led_blink(h->periph_handle, h->gpio_num, 100, 0, false, -1);
+            periph_led_blink(h->periph_handle, h->gpio_num, 100, 0, false, -1, value);
             break;
         case DISPLAY_PATTERN_TURN_OFF:
-            periph_led_blink(h->periph_handle, h->gpio_num, 0, 100, false, -1);
+            periph_led_blink(h->periph_handle, h->gpio_num, 0, 100, false, -1, value);
             break;
         default:
+            ESP_LOGW(TAG, "The led mode is invalid");
             break;
     }
     return ESP_OK;
@@ -79,5 +81,6 @@ esp_err_t led_indicator_pattern(void *handle, int pat, int value)
 
 void led_indicator_deinit(led_indicator_handle_t handle)
 {
+    AUDIO_NULL_CHECK(TAG, handle, return);
     esp_periph_destroy (handle->periph_handle);
 }

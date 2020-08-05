@@ -191,7 +191,8 @@ google_tts_handle_t google_tts_init(google_tts_config_t *config)
     audio_pipeline_register(tts->pipeline, tts->http_stream_reader, "tts_http");
     audio_pipeline_register(tts->pipeline, tts->mp3_decoder,        "tts_mp3");
     audio_pipeline_register(tts->pipeline, tts->i2s_writer,         "tts_i2s");
-    audio_pipeline_link(tts->pipeline, (const char *[]) {"tts_http", "tts_mp3", "tts_i2s"}, 3);
+    const char *link_tag[3] = {"tts_http", "tts_mp3", "tts_i2s"};
+    audio_pipeline_link(tts->pipeline, &link_tag[3], 3);
     i2s_stream_set_clk(tts->i2s_writer, config->playback_sample_rate, 16, 1);
     return tts;
 exit_tts_init:
@@ -204,6 +205,8 @@ esp_err_t google_tts_destroy(google_tts_handle_t tts)
     if (tts == NULL) {
         return ESP_FAIL;
     }
+    audio_pipeline_stop(tts->pipeline);
+    audio_pipeline_wait_for_stop(tts->pipeline);
     audio_pipeline_terminate(tts->pipeline);
     audio_pipeline_remove_listener(tts->pipeline);
     audio_pipeline_deinit(tts->pipeline);
@@ -227,7 +230,8 @@ esp_err_t google_tts_set_listener(google_tts_handle_t tts, audio_event_iface_han
 bool google_tts_check_event_finish(google_tts_handle_t tts, audio_event_iface_msg_t *msg)
 {
     if (msg->source_type == AUDIO_ELEMENT_TYPE_ELEMENT && msg->source == (void *) tts->i2s_writer
-            && msg->cmd == AEL_MSG_CMD_REPORT_STATUS && (int) msg->data == AEL_STATUS_STATE_STOPPED) {
+            && msg->cmd == AEL_MSG_CMD_REPORT_STATUS
+            && (((int)msg->data == AEL_STATUS_STATE_STOPPED) || ((int)msg->data == AEL_STATUS_STATE_FINISHED))) {
         return true;
     }
     return false;

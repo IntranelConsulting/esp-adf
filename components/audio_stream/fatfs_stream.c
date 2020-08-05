@@ -222,6 +222,7 @@ static esp_err_t _fatfs_close(audio_element_handle_t self)
         fatfs->is_open = false;
     }
     if (AEL_STATE_PAUSED != audio_element_get_state(self)) {
+        audio_element_report_info(self);
         audio_element_info_t info = {0};
         audio_element_getinfo(self, &info);
         info.byte_pos = 0;
@@ -254,6 +255,7 @@ audio_element_handle_t fatfs_stream_init(fatfs_stream_cfg_t *config)
     cfg.task_core = config->task_core;
     cfg.out_rb_size = config->out_rb_size;
     cfg.buffer_len = config->buf_sz;
+    cfg.stack_in_ext = config->ext_stack;
     if (cfg.buffer_len == 0) {
         cfg.buffer_len = FATFS_STREAM_BUF_SIZE;
     }

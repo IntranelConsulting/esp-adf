@@ -23,23 +23,28 @@
  */
 
 #include <string.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
-#include "freertos/task.h"
-#include "freertos/event_groups.h"
+// #include "freertos/FreeRTOS.h"
+// #include "freertos/semphr.h"
+// #include "freertos/task.h"
+// #include "freertos/event_groups.h"
 #include "driver/uart.h"
 
 #include "esp_log.h"
 #include "esp_console.h"
 #include "esp_vfs_dev.h"
-#include "rom/queue.h"
+#include "sys/queue.h"
 #include "argtable3/argtable3.h"
 #include "periph_console.h"
+#include "audio_mem.h"
+
+#if __has_include("esp_idf_version.h")
+#include "esp_idf_version.h"
+#else
+#define ESP_IDF_VERSION_VAL(major, minor, patch) 0
+#endif
 
 static const char *TAG = "PERIPH_CONSOLE";
 
-
-#define CONSOLE_BUFFER_SIZE (128)
 #define CONSOLE_MAX_ARGUMENTS (5)
 
 static const int STOPPED_BIT = BIT1;
@@ -55,6 +60,7 @@ typedef struct periph_console {
     EventGroupHandle_t          state_event_bits;
     int                         task_stack;
     int                         task_prio;
+    int                         buffer_size;
     char                        *prompt_string;
 } periph_console_t;
 
@@ -96,7 +102,12 @@ bool console_get_line(periph_console_handle_t console, unsigned max_size, TickTy
     char c;
     char tx[3];
 
+#if (ESP_IDF_VERSION > ESP_IDF_VERSION_VAL(3, 3, 2))
+    int nread = uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM, (uint8_t *)&c, 1, time_to_wait);
+#else
     int nread = uart_read_bytes(CONFIG_CONSOLE_UART_NUM, (uint8_t *)&c, 1, time_to_wait);
+#endif
+
     if (nread <= 0) {
         return false;
     }
@@ -106,14 +117,26 @@ bool console_get_line(periph_console_handle_t console, unsigned max_size, TickTy
             tx[0] = c;
             tx[1] = 0x20;
             tx[2] = c;
+
+#if (ESP_IDF_VERSION > ESP_IDF_VERSION_VAL(3, 3, 2))
+            uart_write_bytes(CONFIG_ESP_CONSOLE_UART_NUM, (const char *)tx, 3);
+#else
             uart_write_bytes(CONFIG_CONSOLE_UART_NUM, (const char *)tx, 3);
+#endif
+
         }
         return false;
     }
     if (c == '\n' || c == '\r') {
         tx[0] = '\r';
         tx[1] = '\n';
+
+#if (ESP_IDF_VERSION > ESP_IDF_VERSION_VAL(3, 3, 2))
+        uart_write_bytes(CONFIG_ESP_CONSOLE_UART_NUM, (const char *)tx, 2);
+#else
         uart_write_bytes(CONFIG_CONSOLE_UART_NUM, (const char *)tx, 2);
+#endif
+
         console->buffer[console->total_bytes] = 0;
         return true;
     }
@@ -121,7 +144,13 @@ bool console_get_line(periph_console_handle_t console, unsigned max_size, TickTy
     if (c < 0x20) {
         return false;
     }
+
+#if (ESP_IDF_VERSION > ESP_IDF_VERSION_VAL(3, 3, 2))
+    uart_write_bytes(CONFIG_ESP_CONSOLE_UART_NUM, (const char *)&c, 1);
+#else
     uart_write_bytes(CONFIG_CONSOLE_UART_NUM, (const char *)&c, 1);
+#endif
+
     console->buffer[console->total_bytes++] = (char)c;
     if (console->total_bytes > max_size) {
         console->total_bytes = 0;
@@ -164,10 +193,10 @@ static esp_err_t _console_destroy(esp_periph_handle_t self)
     xEventGroupWaitBits(console->state_event_bits, STOPPED_BIT, false, true, portMAX_DELAY);
     vEventGroupDelete(console->state_event_bits);
     if (console->prompt_string) {
-        free(console->prompt_string);
+        audio_free(console->prompt_string);
     }
-    free(console->buffer);
-    free(console);
+    audio_free(console->buffer);
+    audio_free(console);
     return ESP_OK;
 }
 
@@ -179,7 +208,7 @@ static void _console_task(void *pv)
     int n;
 
     periph_console_handle_t console = (periph_console_handle_t)esp_periph_get_data(self);
-    if (console->total_bytes >= CONSOLE_BUFFER_SIZE) {
+    if (console->total_bytes >= console->buffer_size) {
         console->total_bytes = 0;
     }
     console->run = true;
@@ -190,7 +219,7 @@ static void _console_task(void *pv)
     }
     printf("\r\n%s ", prompt_string);
     while (console->run) {
-        if (console_get_line(console, CONSOLE_BUFFER_SIZE, 10 / portTICK_RATE_MS)) {
+        if (console_get_line(console, console->buffer_size, 10 / portTICK_RATE_MS)) {
             if (console->total_bytes) {
                 ESP_LOGD(TAG, "Read line: %s", console->buffer);
             }
@@ -230,13 +259,20 @@ static esp_err_t _console_init(esp_periph_handle_t self)
     /* Move the caret to the beginning of the next line on '\n' */
     esp_vfs_dev_uart_set_tx_line_endings(ESP_LINE_ENDINGS_CRLF);
 
-    uart_driver_install(CONFIG_CONSOLE_UART_NUM, CONSOLE_BUFFER_SIZE * 2, 0, 0, NULL, 0);
+#if (ESP_IDF_VERSION > ESP_IDF_VERSION_VAL(3, 3, 2))
+    uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, console->buffer_size * 2, 0, 0, NULL, 0);
+#else
+    uart_driver_install(CONFIG_CONSOLE_UART_NUM, console->buffer_size * 2, 0, 0, NULL, 0);
+#endif
 
     /* Tell VFS to use UART driver */
+#if (ESP_IDF_VERSION > ESP_IDF_VERSION_VAL(3, 3, 2))
+    esp_vfs_dev_uart_use_driver(CONFIG_ESP_CONSOLE_UART_NUM);
+#else
     esp_vfs_dev_uart_use_driver(CONFIG_CONSOLE_UART_NUM);
+#endif
 
-
-    console->buffer = (char*) malloc(CONSOLE_BUFFER_SIZE);
+    console->buffer = (char *) audio_malloc(console->buffer_size);
     AUDIO_MEM_CHECK(TAG, console->buffer, {
         return ESP_ERR_NO_MEM;
     });
@@ -253,12 +289,16 @@ esp_periph_handle_t periph_console_init(periph_console_cfg_t *config)
 {
     esp_periph_handle_t periph = esp_periph_create(PERIPH_ID_CONSOLE, "periph_console");
     AUDIO_MEM_CHECK(TAG, periph, return NULL);
-    periph_console_t *console = calloc(1, sizeof(periph_console_t));
+    periph_console_t *console = audio_calloc(1, sizeof(periph_console_t));
     AUDIO_MEM_CHECK(TAG, console, return NULL);
     console->commands = config->commands;
     console->command_num = config->command_num;
     console->task_stack = CONSOLE_DEFAULT_TASK_STACK;
     console->task_prio = CONSOLE_DEFAULT_TASK_PRIO;
+    console->buffer_size = CONSOLE_DEFAULT_BUFFER_SIZE;
+     if (config->buffer_size > 0) {
+        console->buffer_size = config->buffer_size;
+    }
     if (config->task_stack > 0) {
         console->task_stack = config->task_stack;
     }
@@ -266,9 +306,9 @@ esp_periph_handle_t periph_console_init(periph_console_cfg_t *config)
         console->task_prio = config->task_prio;
     }
     if (config->prompt_string) {
-        console->prompt_string = strdup(config->prompt_string);
+        console->prompt_string = audio_strdup(config->prompt_string);
         AUDIO_MEM_CHECK(TAG, console->prompt_string, {
-            free(console);
+            audio_free(console);
             return NULL;
         });
     }

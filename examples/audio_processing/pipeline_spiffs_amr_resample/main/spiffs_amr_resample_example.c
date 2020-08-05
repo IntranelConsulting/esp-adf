@@ -27,6 +27,8 @@
 #include "esp_peripherals.h"
 #include "periph_button.h"
 #include "periph_spiffs.h"
+#include "periph_adc_button.h"
+#include "periph_touch.h"
 
 static const char *TAG = "SPIFFS_AMR_RESAMPLE_EXAMPLE";
 static esp_periph_set_handle_t set;
@@ -43,14 +45,13 @@ static esp_periph_set_handle_t set;
 #define PLAYBACK_CHANNEL    2
 #define PLAYBACK_BITS       16
 
-static audio_element_handle_t create_filter(int source_rate, int source_channel, int dest_rate, int dest_channel, audio_codec_type_t type)
+static audio_element_handle_t create_filter(int source_rate, int source_channel, int dest_rate, int dest_channel)
 {
     rsp_filter_cfg_t rsp_cfg = DEFAULT_RESAMPLE_FILTER_CONFIG();
     rsp_cfg.src_rate = source_rate;
     rsp_cfg.src_ch = source_channel;
     rsp_cfg.dest_rate = dest_rate;
     rsp_cfg.dest_ch = dest_channel;
-    rsp_cfg.type = type;
     return rsp_filter_init(&rsp_cfg);
 }
 
@@ -73,6 +74,11 @@ static audio_element_handle_t create_i2s_stream(int sample_rates, int bits, int 
 {
     i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
     i2s_cfg.type = type;
+#if defined CONFIG_ESP_LYRAT_MINI_V1_1_BOARD
+    if (i2s_cfg.type == AUDIO_STREAM_READER) {
+        i2s_cfg.i2s_port = 1;
+    }
+#endif
     audio_element_handle_t i2s_stream = i2s_stream_init(&i2s_cfg);
     mem_assert(i2s_stream);
     audio_element_info_t i2s_info = {0};
@@ -114,7 +120,7 @@ void record_playback_task()
 
     ESP_LOGI(TAG, "[1.2] Create audio elements for recorder pipeline");
     audio_element_handle_t i2s_reader_el = create_i2s_stream(RECORD_RATE, RECORD_BITS, RECORD_CHANNEL, AUDIO_STREAM_READER);
-    audio_element_handle_t filter_downsample_el = create_filter(RECORD_RATE, RECORD_CHANNEL, SAVE_FILE_RATE, SAVE_FILE_CHANNEL, AUDIO_CODEC_TYPE_ENCODER);
+    audio_element_handle_t filter_downsample_el = create_filter(RECORD_RATE, RECORD_CHANNEL, SAVE_FILE_RATE, SAVE_FILE_CHANNEL);
     audio_element_handle_t amrnb_encoder_el = create_amrnb_encoder();
     audio_element_handle_t spiffs_writer_el = create_spiffs_stream(SAVE_FILE_RATE, SAVE_FILE_BITS, SAVE_FILE_CHANNEL, AUDIO_STREAM_WRITER);
 
@@ -134,7 +140,7 @@ void record_playback_task()
     ESP_LOGI(TAG, "[2.2] Create audio elements for playback pipeline");
     audio_element_handle_t spiffs_reader_el = create_spiffs_stream(SAVE_FILE_RATE, SAVE_FILE_BITS, SAVE_FILE_CHANNEL, AUDIO_STREAM_READER);
     audio_element_handle_t amr_decoder_el = create_amr_decoder();
-    audio_element_handle_t filter_upsample_el = create_filter(SAVE_FILE_RATE, SAVE_FILE_CHANNEL, PLAYBACK_RATE, PLAYBACK_CHANNEL, AUDIO_CODEC_TYPE_DECODER);
+    audio_element_handle_t filter_upsample_el = create_filter(SAVE_FILE_RATE, SAVE_FILE_CHANNEL, PLAYBACK_RATE, PLAYBACK_CHANNEL);
     audio_element_handle_t i2s_writer_el = create_i2s_stream(PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL, AUDIO_STREAM_WRITER);
 
     ESP_LOGI(TAG, "[2.3] Register audio elements to playback pipeline");
@@ -155,26 +161,26 @@ void record_playback_task()
             ESP_LOGE(TAG, "[ * ] Event interface error : %d", ret);
             continue;
         }
-
-        if (msg.source_type != PERIPH_ID_BUTTON) {
-            continue;
-        }
         if ((int)msg.data == get_input_mode_id()) {
             ESP_LOGI(TAG, "STOP");
             break;
         }
 
-        if (msg.cmd == PERIPH_BUTTON_PRESSED) {
+        if (msg.cmd == PERIPH_BUTTON_PRESSED || msg.cmd == PERIPH_ADC_BUTTON_PRESSED || msg.cmd == PERIPH_TOUCH_TAP) {
             ESP_LOGE(TAG, "STOP playback and START recording");
             audio_pipeline_stop(pipeline_play);
             audio_pipeline_wait_for_stop(pipeline_play);
+            audio_pipeline_terminate(pipeline_play);
+            audio_pipeline_reset_ringbuffer(pipeline_play);
+            audio_pipeline_reset_elements(pipeline_play);
 
             /**
              * Audio Recording Flow:
              * [codec_chip]-->i2s_stream--->filter-->amrnb_encoder-->spiffs_stream-->[flash]
              */
             ESP_LOGI(TAG, "Link audio elements to make recorder pipeline ready");
-            audio_pipeline_link(pipeline_rec, (const char *[]) {"i2s_reader", "filter_downsample", "amrnb_encoder", "file_writer"}, 4);
+            const char *link_rec[4] = {"i2s_reader", "filter_downsample", "amrnb_encoder", "file_writer"};
+            audio_pipeline_link(pipeline_rec, &link_rec[0], 4);
 
             ESP_LOGI(TAG, "Setup file path to save recorded audio");
             i2s_stream_set_clk(i2s_writer_el, RECORD_RATE, RECORD_BITS, RECORD_CHANNEL);
@@ -184,13 +190,17 @@ void record_playback_task()
             ESP_LOGI(TAG, "STOP recording and START playback");
             audio_pipeline_stop(pipeline_rec);
             audio_pipeline_wait_for_stop(pipeline_rec);
+            audio_pipeline_terminate(pipeline_rec);
+            audio_pipeline_reset_ringbuffer(pipeline_rec);
+            audio_pipeline_reset_elements(pipeline_rec);
 
             /**
              * Audio Playback Flow:
              * [flash]-->spiffs_stream-->amr_decoder-->filter-->i2s_stream-->[codec_chip]
              */
             ESP_LOGI(TAG, "Link audio elements to make playback pipeline ready");
-            audio_pipeline_link(pipeline_play, (const char *[]) {"file_reader", "amr_decoder", "filter_upsample", "i2s_writer"}, 4);
+            const char *link_play[4] = {"file_reader", "amr_decoder", "filter_upsample", "i2s_writer"};
+            audio_pipeline_link(pipeline_play, &link_play[0], 4);
 
             ESP_LOGI(TAG, "Setup file path to read the amr audio to play");
             i2s_stream_set_clk(i2s_writer_el, PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL);
@@ -200,7 +210,11 @@ void record_playback_task()
     }
 
     ESP_LOGI(TAG, "[ 4 ] Stop audio_pipeline");
+    audio_pipeline_stop(pipeline_rec);
+    audio_pipeline_wait_for_stop(pipeline_rec);
     audio_pipeline_terminate(pipeline_rec);
+    audio_pipeline_stop(pipeline_play);
+    audio_pipeline_wait_for_stop(pipeline_play);
     audio_pipeline_terminate(pipeline_play);
 
     /* Terminate the pipeline before removing the listener */
@@ -252,21 +266,14 @@ void app_main(void)
         .format_if_mount_failed = true
     };
     esp_periph_handle_t spiffs_handle = periph_spiffs_init(&spiffs_cfg);
-
-    // Initialize Button peripheral
-    periph_button_cfg_t btn_cfg = {
-        .gpio_mask = (1ULL << get_input_rec_id()) | (1ULL << get_input_mode_id()), //REC BTN & MODE BTN
-    };
-    esp_periph_handle_t button_handle = periph_button_init(&btn_cfg);
-
     // Start spiffs & button peripheral
     esp_periph_start(set, spiffs_handle);
-    esp_periph_start(set, button_handle);
-
     // Wait until spiffs is mounted
     while (!periph_spiffs_is_mounted(spiffs_handle)) {
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
+
+    audio_board_key_init(set);
 
     // Setup audio codec
     audio_board_handle_t board_handle = audio_board_init();

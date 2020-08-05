@@ -79,10 +79,12 @@ typedef struct {
     int                         task_stack;             /*!< Task stack size */
     int                         task_core;              /*!< Task running in core (0 or 1) */
     int                         task_prio;              /*!< Task priority (based on freeRTOS priority) */
+    bool                        stack_in_ext;           /*!< Try to allocate stack in external memory */
     http_stream_event_handle_t  event_handle;           /*!< The hook function for HTTP Stream */
     void                        *user_data;             /*!< User data context */
     bool                        auto_connect_next_track;/*!< connect next track without open/close */
     bool                        enable_playlist_parser; /*!< Enable playlist parser*/
+    int                         multi_out_num;          /*!< The number of multiple output */
 } http_stream_cfg_t;
 
 
@@ -91,12 +93,18 @@ typedef struct {
 #define HTTP_STREAM_TASK_PRIO           (4)
 #define HTTP_STREAM_RINGBUFFER_SIZE     (20 * 1024)
 
-#define HTTP_STREAM_CFG_DEFAULT() {\
-    .type = AUDIO_STREAM_READER,\
-    .task_prio = HTTP_STREAM_TASK_PRIO, \
-    .task_core = HTTP_STREAM_TASK_CORE, \
-    .task_stack = HTTP_STREAM_TASK_STACK, \
-    .out_rb_size = HTTP_STREAM_RINGBUFFER_SIZE, \
+#define HTTP_STREAM_CFG_DEFAULT() {              \
+    .type = AUDIO_STREAM_READER,                 \
+    .out_rb_size = HTTP_STREAM_RINGBUFFER_SIZE,  \
+    .task_stack = HTTP_STREAM_TASK_STACK,        \
+    .task_core = HTTP_STREAM_TASK_CORE,          \
+    .task_prio = HTTP_STREAM_TASK_PRIO,          \
+    .stack_in_ext = true,                        \
+    .event_handle = NULL,                        \
+    .user_data = NULL,                           \
+    .auto_connect_next_track = false,            \
+    .enable_playlist_parser = false,             \
+    .multi_out_num = 0,                          \
 }
 
 /**
@@ -114,7 +122,7 @@ audio_element_handle_t http_stream_init(http_stream_cfg_t *config);
  * @brief      Connect to next track in the playlist.
  *
  *             This function can be used in event_handler of http_stream.
- *             User can call this function to connect to next track in playlist when he/she gets `HTTP_STREAM_FINISH_TRACK` event 
+ *             User can call this function to connect to next track in playlist when he/she gets `HTTP_STREAM_FINISH_TRACK` event
  *
  * @param      el  The http_stream element handle
  *
@@ -124,6 +132,19 @@ audio_element_handle_t http_stream_init(http_stream_cfg_t *config);
  */
 esp_err_t http_stream_next_track(audio_element_handle_t el);
 esp_err_t http_stream_restart(audio_element_handle_t el);
+
+/**
+ * @brief       Try to fetch the tracks again.
+ *
+ *              If this is live stream we will need to keep fetching URIs.
+ *
+ * @param       el  The http_stream element handle
+ *
+ * @return
+ *     - ESP_OK on success
+ *     - ESP_ERR_NOT_SUPPORTED if playlist is finished
+ */
+esp_err_t http_stream_fetch_again(audio_element_handle_t el);
 
 #ifdef __cplusplus
 }

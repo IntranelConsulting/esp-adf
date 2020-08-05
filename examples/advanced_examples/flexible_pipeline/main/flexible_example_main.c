@@ -32,6 +32,8 @@
 #include "esp_peripherals.h"
 #include "periph_sdcard.h"
 #include "periph_button.h"
+#include "periph_adc_button.h"
+#include "periph_touch.h"
 
 static const char *TAG = "FLEXIBLE_PIPELINE";
 static esp_periph_set_handle_t set;
@@ -44,14 +46,13 @@ static esp_periph_set_handle_t set;
 #define PLAYBACK_CHANNEL    2
 #define PLAYBACK_BITS       16
 
-static audio_element_handle_t create_filter(int source_rate, int source_channel, int dest_rate, int dest_channel, audio_codec_type_t type)
+static audio_element_handle_t create_filter(int source_rate, int source_channel, int dest_rate, int dest_channel)
 {
     rsp_filter_cfg_t rsp_cfg = DEFAULT_RESAMPLE_FILTER_CONFIG();
     rsp_cfg.src_rate = source_rate;
     rsp_cfg.src_ch = source_channel;
     rsp_cfg.dest_rate = dest_rate;
     rsp_cfg.dest_ch = dest_channel;
-    rsp_cfg.type = type;
     return rsp_filter_init(&rsp_cfg);
 }
 
@@ -108,7 +109,7 @@ void flexible_pipeline_playback()
     audio_element_handle_t fatfs_mp3_reader_el = create_fatfs_stream(SAVE_FILE_RATE, SAVE_FILE_BITS, SAVE_FILE_CHANNEL, AUDIO_STREAM_READER);
     audio_element_handle_t mp3_decoder_el = create_mp3_decoder();
     audio_element_handle_t aac_decoder_el = create_aac_decoder();
-    audio_element_handle_t filter_upsample_el = create_filter(SAVE_FILE_RATE, SAVE_FILE_CHANNEL, PLAYBACK_RATE, PLAYBACK_CHANNEL, AUDIO_CODEC_TYPE_DECODER);
+    audio_element_handle_t filter_upsample_el = create_filter(SAVE_FILE_RATE, SAVE_FILE_CHANNEL, PLAYBACK_RATE, PLAYBACK_CHANNEL);
     audio_element_handle_t i2s_writer_el = create_i2s_stream(PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL, AUDIO_STREAM_WRITER);
 
     ESP_LOGI(TAG, "[ 2 ] Register all audio elements to playback pipeline");
@@ -135,7 +136,8 @@ void flexible_pipeline_playback()
 
     ESP_LOGI(TAG, "[ 4 ] Start playback pipeline");
     bool source_is_mp3_format = false;
-    audio_pipeline_link(pipeline_play, (const char *[]) {p0_reader_tag, "aac_decoder", "filter_upsample", "i2s_writer"}, 4);
+    const char *link_tag[4] = {p0_reader_tag, "aac_decoder", "filter_upsample", "i2s_writer"};
+    audio_pipeline_link(pipeline_play, &link_tag[0], 4);
     audio_pipeline_run(pipeline_play);
     while (1) {
         audio_event_iface_msg_t msg;
@@ -144,13 +146,9 @@ void flexible_pipeline_playback()
             ESP_LOGE(TAG, "[ * ] Event interface error : %d", ret);
             continue;
         }
-        if (msg.source_type != PERIPH_ID_BUTTON) {
-            audio_element_handle_t el = (audio_element_handle_t)msg.source;
-            ESP_LOGI(TAG, "Element tag:[%s],src_type:%x, cmd:%d, data_len:%d, data:%p",
-                     audio_element_get_tag(el), msg.source_type, msg.cmd, msg.data_len, msg.data);
-            continue;
-        }
-        if (((int)msg.data == get_input_mode_id()) && (msg.cmd == PERIPH_BUTTON_PRESSED)) {
+
+        if (((int)msg.data == get_input_mode_id()) && (msg.cmd == PERIPH_BUTTON_PRESSED || msg.cmd == PERIPH_ADC_BUTTON_PRESSED
+                || msg.cmd == PERIPH_TOUCH_TAP)) {
             source_is_mp3_format = !source_is_mp3_format;
             audio_pipeline_pause(pipeline_play);
             ESP_LOGE(TAG, "Changing music to %s", source_is_mp3_format ? "mp3 format" : "aac format");
@@ -170,6 +168,8 @@ void flexible_pipeline_playback()
     }
 
     ESP_LOGI(TAG, "[ 5 ] Stop playback pipeline");
+    audio_pipeline_stop(pipeline_play);
+    audio_pipeline_wait_for_stop(pipeline_play);
     audio_pipeline_terminate(pipeline_play);
     audio_pipeline_unregister_more(pipeline_play, fatfs_aac_reader_el,
                                    fatfs_mp3_reader_el, mp3_decoder_el,
@@ -207,31 +207,14 @@ void app_main(void)
     set = esp_periph_set_init(&periph_cfg);
 
     // Initialize SD Card peripheral
-    periph_sdcard_cfg_t sdcard_cfg = {
-        .root = "/sdcard",
-        .card_detect_pin = get_sdcard_intr_gpio(),   // GPIO_NUM_34
-    };
-    esp_periph_handle_t sdcard_handle = periph_sdcard_init(&sdcard_cfg);
+    audio_board_sdcard_init(set);
 
     // Initialize Button peripheral
-    periph_button_cfg_t btn_cfg = {
-        .gpio_mask = (1ULL << get_input_rec_id()) | (1ULL << get_input_mode_id()), // REC BTN & MODE BTN
-    };
-    esp_periph_handle_t button_handle = periph_button_init(&btn_cfg);
-
-    // Start sdcard & button peripheral
-    esp_periph_start(set, sdcard_handle);
-    esp_periph_start(set, button_handle);
-
-    // Wait until sdcard is mounted
-    while (!periph_sdcard_is_mounted(sdcard_handle)) {
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
+    audio_board_key_init(set);
 
     // Setup audio codec
     audio_board_handle_t board_handle = audio_board_init();
     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
-
 
     flexible_pipeline_playback();
     esp_periph_set_destroy(set);

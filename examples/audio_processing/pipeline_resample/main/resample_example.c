@@ -75,6 +75,11 @@ static audio_element_handle_t create_i2s_stream(int sample_rates, int bits, int 
 {
     i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
     i2s_cfg.type = type;
+#if defined CONFIG_ESP_LYRAT_MINI_V1_1_BOARD
+    if (i2s_cfg.type == AUDIO_STREAM_READER) {
+        i2s_cfg.i2s_port = 1;
+    }
+#endif
     audio_element_handle_t i2s_stream = i2s_stream_init(&i2s_cfg);
     mem_assert(i2s_stream);
     audio_element_info_t i2s_info = {0};
@@ -158,10 +163,6 @@ void record_playback_task()
             ESP_LOGE(TAG, "[ * ] Event interface error : %d", ret);
             continue;
         }
-
-        if (msg.source_type != PERIPH_ID_BUTTON) {
-            continue;
-        }
         if ((int)msg.data == GPIO_NUM_39) {
             ESP_LOGI(TAG, "STOP");
             break;
@@ -177,7 +178,8 @@ void record_playback_task()
              * [codec_chip]-->i2s_stream--->filter-->wav_encoder-->fatfs_stream-->[sdcard]
              */
             ESP_LOGI(TAG, "Link audio elements to make recorder pipeline ready");
-            audio_pipeline_link(pipeline_rec, (const char *[]) {"i2s_reader", "filter_downsample", "wav_encoder", "file_writer"}, 4);
+            const char *link_tag[4] = {"i2s_reader", "filter_downsample", "wav_encoder", "file_writer"};
+            audio_pipeline_link(pipeline_rec, &link_tag[0], 4);
 
             ESP_LOGI(TAG, "Setup file path to save recorded audio");
             i2s_stream_set_clk(i2s_writer_el, RECORD_RATE, RECORD_BITS, RECORD_CHANNEL);
@@ -193,7 +195,8 @@ void record_playback_task()
              * [sdcard]-->fatfs_stream-->wav_decoder-->filter-->i2s_stream-->[codec_chip]
              */
             ESP_LOGI(TAG, "Link audio elements to make playback pipeline ready");
-            audio_pipeline_link(pipeline_play, (const char *[]) {"file_reader", "wav_decoder", "filter_upsample", "i2s_writer"}, 4);
+            const char *link_tag[4] = {"file_reader", "wav_decoder", "filter_upsample", "i2s_writer"};
+            audio_pipeline_link(pipeline_play, &link_tag[0], 4);
 
             ESP_LOGI(TAG, "Setup file path to read the wav audio to play");
             i2s_stream_set_clk(i2s_writer_el, PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL);
@@ -203,7 +206,11 @@ void record_playback_task()
     }
 
     ESP_LOGI(TAG, "[ 4 ] Stop audio_pipeline");
+    audio_pipeline_stop(pipeline_rec);
+    audio_pipeline_wait_for_stop(pipeline_rec);
     audio_pipeline_terminate(pipeline_rec);
+    audio_pipeline_stop(pipeline_play);
+    audio_pipeline_wait_for_stop(pipeline_play);
     audio_pipeline_terminate(pipeline_play);
 
     audio_pipeline_unregister(pipeline_play, fatfs_reader_el);
@@ -249,26 +256,10 @@ void app_main(void)
     set = esp_periph_set_init(&periph_cfg);
 
     // Initialize SD Card peripheral
-    periph_sdcard_cfg_t sdcard_cfg = {
-        .root = "/sdcard",
-        .card_detect_pin = get_sdcard_intr_gpio(),   //GPIO_NUM_34
-    };
-    esp_periph_handle_t sdcard_handle = periph_sdcard_init(&sdcard_cfg);
+    audio_board_sdcard_init(set);
 
     // Initialize Button peripheral
-    periph_button_cfg_t btn_cfg = {
-        .gpio_mask = (1ULL << get_input_rec_id()) | (1ULL << get_input_mode_id()), //REC BTN & MODE BTN
-    };
-    esp_periph_handle_t button_handle = periph_button_init(&btn_cfg);
-
-    // Start sdcard & button peripheral
-    esp_periph_start(set, sdcard_handle);
-    esp_periph_start(set, button_handle);
-
-    // Wait until sdcard is mounted
-    while (!periph_sdcard_is_mounted(sdcard_handle)) {
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
+    audio_board_key_init(set);
 
     // Setup audio codec
     audio_board_handle_t board_handle = audio_board_init();

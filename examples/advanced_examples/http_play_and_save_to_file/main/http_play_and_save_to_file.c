@@ -59,6 +59,7 @@ void app_main(void)
 
     ESP_LOGI(TAG, "[2.1] Create http stream to read data");
     http_stream_cfg_t http_cfg = HTTP_STREAM_CFG_DEFAULT();
+    http_cfg.multi_out_num = 1;
     http_stream_reader = http_stream_init(&http_cfg);
 
     ESP_LOGI(TAG, "[2.2] Create i2s stream to write data to codec chip");
@@ -76,7 +77,8 @@ void app_main(void)
     audio_pipeline_register(pipeline, i2s_stream_writer,  "i2s");
 
     ESP_LOGI(TAG, "[2.5] Link elements together http_stream-->mp3_decoder-->i2s_stream-->[codec_chip]");
-    audio_pipeline_link(pipeline, (const char *[]) {"http", "mp3", "i2s"}, 3);
+    const char *link_tag[3] = {"http", "mp3", "i2s"};
+    audio_pipeline_link(pipeline, &link_tag[0], 3);
     ESP_LOGI(TAG, "[2.6] Set up  uri (http as http_stream, mp3 as mp3 decoder, and default output is i2s)");
     audio_element_set_uri(http_stream_reader, "https://dl.espressif.com/dl/audio/ff-16b-2c-44100hz.mp3");
 
@@ -102,7 +104,8 @@ void app_main(void)
     audio_pipeline_register(pipeline_save, el_fatfs_wr_stream, "file");
 
     ESP_LOGI(TAG, "[3.5] Link elements together raw_stream-->fatfs_stream");
-    audio_pipeline_link(pipeline_save, (const char *[]) {"raw", "file"}, 2);
+    const char *link_save[2] = {"raw", "file"};
+    audio_pipeline_link(pipeline_save, &link_save[0], 2);
 
     ESP_LOGI(TAG, "[3.6] Connect input ringbuffer of pipeline_save to http stream multi output");
     ringbuf_handle_t rb = audio_element_get_output_ringbuf(el_raw_read);
@@ -120,15 +123,7 @@ void app_main(void)
     periph_wifi_wait_for_connected(wifi_handle, portMAX_DELAY);
 
     ESP_LOGI(TAG, "[4.1] Start and wait for SDCARD to mount");
-    periph_sdcard_cfg_t sdcard_cfg = {
-        .root = "/sdcard",
-        .card_detect_pin = get_sdcard_intr_gpio(), // GPIO_NUM_34
-    };
-    esp_periph_handle_t sdcard_handle = periph_sdcard_init(&sdcard_cfg);
-    esp_periph_start(set, sdcard_handle);
-    while (!periph_sdcard_is_mounted(sdcard_handle)) {
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
+    audio_board_sdcard_init(set);
 
     ESP_LOGI(TAG, "[ 5 ] Set up  event listener");
     audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
@@ -168,13 +163,16 @@ void app_main(void)
 
         /* Stop when the last pipeline element (i2s_stream_writer in this case) receives stop event */
         if (msg.source_type == AUDIO_ELEMENT_TYPE_ELEMENT && msg.source == (void *) i2s_stream_writer
-            && msg.cmd == AEL_MSG_CMD_REPORT_STATUS && (int) msg.data == AEL_STATUS_STATE_STOPPED) {
+            && msg.cmd == AEL_MSG_CMD_REPORT_STATUS
+            && (((int)msg.data == AEL_STATUS_STATE_STOPPED) || ((int)msg.data == AEL_STATUS_STATE_FINISHED))) {
             ESP_LOGW(TAG, "[ * ] Stop event received");
             break;
         }
     }
 
     ESP_LOGI(TAG, "[ 7 ] Stop pipelines");
+    audio_pipeline_stop(pipeline);
+    audio_pipeline_wait_for_stop(pipeline);
     audio_pipeline_terminate(pipeline);
     audio_pipeline_unregister_more(pipeline, http_stream_reader,
                                    mp3_decoder, i2s_stream_writer, NULL);

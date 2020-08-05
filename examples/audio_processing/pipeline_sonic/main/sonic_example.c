@@ -65,6 +65,12 @@ static audio_element_handle_t create_i2s_stream(int sample_rates, int bits, int 
 {
     i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
     i2s_cfg.type = type;
+#if defined CONFIG_ESP_LYRAT_MINI_V1_1_BOARD
+    if (i2s_cfg.type == AUDIO_STREAM_READER) {
+        i2s_cfg.i2s_port = 1;
+        i2s_cfg.i2s_config.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;
+    }
+#endif
     audio_element_handle_t i2s_stream = i2s_stream_init(&i2s_cfg);
     mem_assert(i2s_stream);
     audio_element_info_t i2s_info = {0};
@@ -113,7 +119,8 @@ void record_playback_task()
     audio_pipeline_register(pipeline_rec, i2s_reader_el, "i2s_reader");
     audio_pipeline_register(pipeline_rec, wav_encoder_el, "wav_encoder");
     audio_pipeline_register(pipeline_rec, fatfs_writer_el, "file_writer");
-    audio_pipeline_link(pipeline_rec, (const char *[]) {"i2s_reader", "wav_encoder", "file_writer"}, 3);
+    const char *link_rec[3] = {"i2s_reader", "wav_encoder", "file_writer"};
+    audio_pipeline_link(pipeline_rec, &link_rec[0], 3);
 
     /**
      * For the Playback:
@@ -130,7 +137,9 @@ void record_playback_task()
     audio_pipeline_register(pipeline_play, wav_decoder_el, "wav_decoder");
     audio_pipeline_register(pipeline_play, sonic_el, "sonic");
     audio_pipeline_register(pipeline_play, i2s_writer_el, "i2s_writer");
-    audio_pipeline_link(pipeline_play, (const char *[]) {"file_reader", "wav_decoder", "sonic", "i2s_writer"}, 4);
+    
+    const char *link_play[4] = {"file_reader", "wav_decoder", "sonic", "i2s_writer"};
+    audio_pipeline_link(pipeline_play, &link_play[0], 4);
 
     ESP_LOGI(TAG, "[ 3 ] Set up  event listener");
     audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
@@ -143,9 +152,6 @@ void record_playback_task()
         esp_err_t ret = audio_event_iface_listen(evt, &msg, portMAX_DELAY);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "[ * ] Event interface error : %d", ret);
-            continue;
-        }
-        if (msg.source_type != PERIPH_ID_BUTTON) {
             continue;
         }
         if ((int)msg.data == get_input_mode_id()) {
@@ -166,19 +172,25 @@ void record_playback_task()
                 ESP_LOGE(TAG, "Now recording, release [Rec] to STOP");
                 audio_pipeline_stop(pipeline_play);
                 audio_pipeline_wait_for_stop(pipeline_play);
+                audio_pipeline_terminate(pipeline_play);
+                audio_pipeline_reset_ringbuffer(pipeline_play);
+                audio_pipeline_reset_elements(pipeline_play);
 
                 /**
                  * Audio Recording Flow:
                  * [codec_chip]-->i2s_stream--->wav_encoder-->fatfs_stream-->[sdcard]
                  */
                 ESP_LOGI(TAG, "Setup file path to save recorded audio");
-                i2s_stream_set_clk(i2s_writer_el, SAMPLE_RATE, BITS, CHANNEL);
+                i2s_stream_set_clk(i2s_reader_el, SAMPLE_RATE, BITS, CHANNEL);
                 audio_element_set_uri(fatfs_writer_el, "/sdcard/rec.wav");
                 audio_pipeline_run(pipeline_rec);
             } else if (msg.cmd == PERIPH_BUTTON_RELEASE || msg.cmd == PERIPH_BUTTON_LONG_RELEASE) {
                 ESP_LOGI(TAG, "START Playback");
                 audio_pipeline_stop(pipeline_rec);
                 audio_pipeline_wait_for_stop(pipeline_rec);
+                audio_pipeline_terminate(pipeline_rec);
+                audio_pipeline_reset_ringbuffer(pipeline_rec);
+                audio_pipeline_reset_elements(pipeline_rec);
 
                 /**
                  * Audio Playback Flow:
@@ -198,7 +210,11 @@ void record_playback_task()
     }
 
     ESP_LOGI(TAG, "[ 4 ] Stop audio_pipeline");
+    audio_pipeline_stop(pipeline_rec);
+    audio_pipeline_wait_for_stop(pipeline_rec);
     audio_pipeline_terminate(pipeline_rec);
+    audio_pipeline_stop(pipeline_play);
+    audio_pipeline_wait_for_stop(pipeline_play);
     audio_pipeline_terminate(pipeline_play);
 
     audio_pipeline_unregister(pipeline_play, fatfs_reader_el);
@@ -245,26 +261,11 @@ void app_main(void)
     set = esp_periph_set_init(&periph_cfg);
 
     // Initialize SD Card peripheral
-    periph_sdcard_cfg_t sdcard_cfg = {
-        .root = "/sdcard",
-        .card_detect_pin = get_sdcard_intr_gpio(), //GPIO_NUM_34
-    };
-    esp_periph_handle_t sdcard_handle = periph_sdcard_init(&sdcard_cfg);
+    audio_board_sdcard_init(set);
 
     // Initialize Button peripheral
-    periph_button_cfg_t btn_cfg = {
-        .gpio_mask = (1ULL << get_input_rec_id()) | (1ULL << get_input_mode_id()), //REC BTN & MODE BTN
-    };
-    esp_periph_handle_t button_handle = periph_button_init(&btn_cfg);
+    audio_board_key_init(set);
 
-    // Start sdcard & button peripheral
-    esp_periph_start(set, sdcard_handle);
-    esp_periph_start(set, button_handle);
-
-    // Wait until sdcard is mounted
-    while (!periph_sdcard_is_mounted(sdcard_handle)) {
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
     // Setup audio codec
     audio_board_handle_t board_handle = audio_board_init();
     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);

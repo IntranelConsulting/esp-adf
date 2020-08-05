@@ -28,6 +28,7 @@
 #include "esp_log.h"
 #include "IS31FL3216.h"
 #include "i2c_bus.h"
+#include "audio_mem.h"
 
 #define IS31FL3216_WRITE_BIT        0x00
 
@@ -57,7 +58,8 @@ static char *TAG = "IS31";
 static esp_err_t is31fl3216_write_reg(is31fl3216_handle_t handle, is31fl3216_reg_t regAddr, uint8_t *data, uint8_t data_num)
 {
     IS31_PARAM_CHECK(NULL != data);
-    esp_err_t ret = i2c_bus_write_bytes(I2C_MASTER_NUM, IS31FL3216_ADDRESS | IS31FL3216_WRITE_BIT, (uint8_t *)&regAddr, 1, data, data_num);
+    is31fl3216_dev_t *dev = (is31fl3216_dev_t *) handle;
+    esp_err_t ret = i2c_bus_write_bytes(dev->bus, IS31FL3216_ADDRESS | IS31FL3216_WRITE_BIT, (uint8_t *)&regAddr, 1, data, data_num);
     return ret;
 }
 
@@ -280,6 +282,7 @@ esp_err_t is31fl3216_reset(is31fl3216_handle_t handle)
     if (ret) {
         return ret;
     }
+
     ret = is31fl3216_write_reg(handle, IS31FL3216_REG_LED_EFFECT, &dat, 1);
     if (ret) {
         return ret;
@@ -301,10 +304,8 @@ is31fl3216_handle_t is31fl3216_init(void)
     conf.scl_io_num = I2C_MASTER_SCL_IO;
     conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
     conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
-    is31fl3216_dev_t *led = (is31fl3216_dev_t *) calloc(1, sizeof(is31fl3216_dev_t));
+    is31fl3216_dev_t *led = (is31fl3216_dev_t *) audio_calloc(1, sizeof(is31fl3216_dev_t));
     led->bus = i2c_bus_create(I2C_MASTER_NUM, &conf);
-    SET_PERI_REG_BITS(PERIPHS_IO_MUX_GPIO18_U, FUN_DRV, 3, FUN_DRV_S);
-    SET_PERI_REG_BITS(PERIPHS_IO_MUX_GPIO23_U, FUN_DRV, 3, FUN_DRV_S);
     led->addr = IS31FL3216_ADDRESS;
     IS31_ERROR_CHECK(ESP_OK == is31fl3216_power(led, IS31FL3216_PWR_NORMAL));
     IS31_ERROR_CHECK(ESP_OK == is31fl3216_cur_mode_set(led, IS31FL3216_CUR_MODE_REXT));
@@ -319,6 +320,6 @@ esp_err_t is31fl3216_deinit(is31fl3216_handle_t handle)
         i2c_bus_delete(dev->bus);
         dev->bus = NULL;
     }
-    free(dev);
+    audio_free(dev);
     return ESP_OK;
 }

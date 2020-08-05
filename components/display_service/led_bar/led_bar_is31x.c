@@ -1,7 +1,7 @@
 /*
  * ESPRESSIF MIT License
  *
- * Copyright (c) 2019 <ESPRESSIF SYSTEMS (SHANGHAI) PTE LTD>
+ * Copyright (c) 2019 <ESPRESSIF SYSTEMS (SHANGHAI) CO., LTD>
  *
  * Permission is hereby granted for use on all ESPRESSIF SYSTEMS products, in which case,
  * it is free of charge, to any person obtaining a copy of this software and associated
@@ -171,6 +171,7 @@ esp_err_t led_bar_is31x_pattern(void *handle, int pat, int value)
             }
             break;
         default:
+            ESP_LOGW(TAG, "The mode is invalid");
             break;
     }
 
@@ -179,5 +180,6 @@ esp_err_t led_bar_is31x_pattern(void *handle, int pat, int value)
 
 void led_bar_is31x_deinit(esp_periph_handle_t handle)
 {
+    AUDIO_NULL_CHECK(TAG, handle, return);
     esp_periph_destroy(handle);
 }

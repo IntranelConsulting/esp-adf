@@ -25,8 +25,6 @@
 #ifndef _AUDIO_PIPELINE_H_
 #define _AUDIO_PIPELINE_H_
 
-#include "rom/queue.h"
-#include "esp_err.h"
 #include "audio_element.h"
 
 #ifdef __cplusplus
@@ -155,10 +153,9 @@ esp_err_t audio_pipeline_resume(audio_pipeline_handle_t pipeline);
 esp_err_t audio_pipeline_pause(audio_pipeline_handle_t pipeline);
 
 /**
- * @brief     Stop all elements and clear information of items. Free up memory for all task items.
- *            The link state of the elements in the pipeline is kept, events are still registered,
- *            but the `audio_pipeline_pause` and `audio_pipeline_resume`  functions have no effect.
- *            To restart audio_pipeline, use the `audio_pipeline_resume` function
+ * @brief     Stop all of the linked elements. Used with `audio_pipeline_wait_for_stop` to keep in sync.
+ *            The link state of the elements in the pipeline is kept, events are still registered.
+ *            The stopped audio_pipeline restart by `audio_pipeline_resume`.
  *
  * @param[in]  pipeline   The Audio Pipeline Handle
  *
@@ -171,7 +168,7 @@ esp_err_t audio_pipeline_stop(audio_pipeline_handle_t pipeline);
 /**
  * @brief      The `audio_pipeline_stop` function sends requests to the elements and exits.
  *             But they need time to get rid of time-blocking tasks.
- *             This function will wait until all the Elements in the pipeline actually stop
+ *             This function will wait `portMAX_DELAY` until all the Elements in the pipeline actually stop
  *
  * @param[in]  pipeline   The Audio Pipeline Handle
  *
@@ -219,6 +216,19 @@ esp_err_t audio_pipeline_unlink(audio_pipeline_handle_t pipeline);
  *     - Others on success
  */
 audio_element_handle_t audio_pipeline_get_el_by_tag(audio_pipeline_handle_t pipeline, const char *tag);
+
+/**
+ * @brief      Based on beginning element to find un-kept element from registered pipeline by tag
+ *
+ * @param[in]  pipeline     The Audio Pipeline Handle
+ * @param[in]  start_el     Specific beginning element
+ * @param[in]  tag          A char pointer
+ *
+ * @return
+ *     - NULL when any errors
+ *     - Others on success
+ */
+audio_element_handle_t audio_pipeline_get_el_once(audio_pipeline_handle_t pipeline, const audio_element_handle_t start_el, const char *tag);
 
 /**
  * @brief      Remove event listener from this audio_pipeline
@@ -356,6 +366,29 @@ esp_err_t audio_pipeline_reset_items_state(audio_pipeline_handle_t pipeline);
 esp_err_t audio_pipeline_reset_ringbuffer(audio_pipeline_handle_t pipeline);
 
 /**
+ * @brief      Reset Pipeline linked elements state
+ *
+ * @param[in]  pipeline   The Audio Pipeline Handle
+ *
+ * @return
+ *     - ESP_OK on success
+ *     - ESP_FAIL when any errors
+ */
+esp_err_t audio_pipeline_reset_elements(audio_pipeline_handle_t pipeline);
+
+/**
+ * @brief      Reset the specific element kept state
+ *
+ * @param[in]  pipeline   The Audio Pipeline Handle
+ * @param[in]  el         The Audio element Handle
+ *
+ * @return
+ *     - ESP_OK on success
+ *     - ESP_FAIL when any errors
+ */
+esp_err_t audio_pipeline_reset_kept_state(audio_pipeline_handle_t pipeline, audio_element_handle_t el);
+
+/**
  * @brief      Break up all the linked elements of specific `pipeline`.
  *             The include and before `kept_ctx_el` working (AEL_STATE_RUNNING or AEL_STATE_PAUSED) elements
  *             and connected ringbuffer will be reserved.
@@ -404,6 +437,18 @@ esp_err_t audio_pipeline_relink(audio_pipeline_handle_t pipeline, const char *li
  *     - ESP_ERR_INVALID_ARG    Invalid parameters.
  */
 esp_err_t audio_pipeline_relink_more(audio_pipeline_handle_t pipeline, audio_element_handle_t element_1, ...);
+
+/**
+ * @brief      Set the pipeline state.
+ *
+ * @param[in]  pipeline     The Audio Pipeline Handle
+ * @param[in]  new_state    The new state will be set
+ *
+ * @return
+ *     - ESP_OK                 All linked elements state are same.
+ *     - ESP_FAIL               Error.
+ */
+esp_err_t audio_pipeline_change_state(audio_pipeline_handle_t pipeline, audio_element_state_t new_state);
 
 
 #ifdef __cplusplus

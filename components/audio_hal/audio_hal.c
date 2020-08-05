@@ -47,13 +47,13 @@ audio_hal_handle_t audio_hal_init(audio_hal_codec_config_t *audio_hal_conf, audi
     audio_hal->audio_hal_lock = mutex_create();
 
     AUDIO_MEM_CHECK(TAG, audio_hal->audio_hal_lock, {
-        free(audio_hal);
+        audio_free(audio_hal);
         return NULL;
     });
     mutex_lock(audio_hal->audio_hal_lock);
     ret  = audio_hal->audio_codec_initialize(audio_hal_conf);
     if (ret == ESP_FAIL) {
-        free(audio_hal);
+        audio_free(audio_hal);
         if (audio_hal_func->handle) {
             return audio_hal_func->handle;
         } else {
@@ -77,7 +77,7 @@ esp_err_t audio_hal_deinit(audio_hal_handle_t audio_hal)
     ret = audio_hal->audio_codec_deinitialize();
     audio_hal->audio_hal_lock = NULL;
     audio_hal->handle = NULL;
-    free(audio_hal);
+    audio_free(audio_hal);
     audio_hal = NULL;
     return ret;
 }
@@ -93,13 +93,23 @@ esp_err_t audio_hal_ctrl_codec(audio_hal_handle_t audio_hal, audio_hal_codec_mod
     return ret;
 }
 
-esp_err_t audio_hal_config_iface(audio_hal_handle_t audio_hal, audio_hal_codec_mode_t mode, audio_hal_codec_i2s_iface_t *iface)
+esp_err_t audio_hal_codec_iface_config(audio_hal_handle_t audio_hal, audio_hal_codec_mode_t mode, audio_hal_codec_i2s_iface_t *iface)
 {
     esp_err_t ret = 0;
     AUDIO_HAL_CHECK_NULL(audio_hal, "audio_hal handle is null", -1);
     AUDIO_HAL_CHECK_NULL(iface, "Get volume para is null", -1);
     mutex_lock(audio_hal->audio_hal_lock);
     ret = audio_hal->audio_codec_config_iface(mode, iface);
+    mutex_unlock(audio_hal->audio_hal_lock);
+    return ret;
+}
+
+esp_err_t audio_hal_set_mute(audio_hal_handle_t audio_hal, bool mute)
+{
+    esp_err_t ret;
+    AUDIO_HAL_CHECK_NULL(audio_hal, "audio_hal handle is null", -1);
+    mutex_lock(audio_hal->audio_hal_lock);
+    ret = audio_hal->audio_codec_set_mute(mute);
     mutex_unlock(audio_hal->audio_hal_lock);
     return ret;
 }
