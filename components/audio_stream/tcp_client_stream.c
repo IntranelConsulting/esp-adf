@@ -35,18 +35,19 @@
 #include "tcp_client_stream.h"
 
 static const char *TAG = "TCP_STREAM";
-#define CONNECT_TIMEOUT_MS        100
+#define CONNECT_TIMEOUT_MS 100
 
-typedef struct tcp_stream {
-    esp_transport_handle_t        t;
-    audio_stream_type_t           type;
-    int                           sock;
-    int                           port;
-    char                          *host;
-    bool                          is_open;
-    int                           timeout_ms;
-    tcp_stream_event_handle_cb    hook;
-    void                          *ctx;
+typedef struct tcp_stream
+{
+    esp_transport_handle_t t;
+    audio_stream_type_t type;
+    int sock;
+    int port;
+    char *host;
+    bool is_open;
+    int timeout_ms;
+    tcp_stream_event_handle_cb hook;
+    void *ctx;
 } tcp_stream_t;
 
 static int _get_socket_error_code_reason(char *str, int sockfd)
@@ -56,11 +57,13 @@ static int _get_socket_error_code_reason(char *str, int sockfd)
     int err;
 
     err = getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &result, &optlen);
-    if (err == -1) {
+    if (err == -1)
+    {
         ESP_LOGE(TAG, "%s, getsockopt failed: ret=%d", str, err);
         return -1;
     }
-    if (result != 0) {
+    if (result != 0)
+    {
         ESP_LOGW(TAG, "%s error, error code: %d, reason: %s", str, err, strerror(result));
     }
     return result;
@@ -68,8 +71,9 @@ static int _get_socket_error_code_reason(char *str, int sockfd)
 
 static esp_err_t _dispatch_event(audio_element_handle_t el, tcp_stream_t *tcp, void *data, int len, tcp_stream_status_t state)
 {
-    if (el && tcp && tcp->hook) {
-        tcp_stream_event_msg_t msg = { 0 };
+    if (el && tcp && tcp->hook)
+    {
+        tcp_stream_event_msg_t msg = {0};
         msg.data = data;
         msg.data_len = len;
         msg.sock_fd = tcp->t;
@@ -84,7 +88,8 @@ static esp_err_t _tcp_open(audio_element_handle_t self)
     AUDIO_NULL_CHECK(TAG, self, return ESP_FAIL);
 
     tcp_stream_t *tcp = (tcp_stream_t *)audio_element_getdata(self);
-    if (tcp->is_open) {
+    if (tcp->is_open)
+    {
         ESP_LOGE(TAG, "Already opened");
         return ESP_FAIL;
     }
@@ -92,8 +97,9 @@ static esp_err_t _tcp_open(audio_element_handle_t self)
     esp_transport_handle_t t = esp_transport_tcp_init();
     AUDIO_NULL_CHECK(TAG, t, return ESP_FAIL);
     tcp->sock = esp_transport_connect(t, tcp->host, tcp->port, CONNECT_TIMEOUT_MS);
-    if (tcp->sock < 0) {
-        _get_socket_error_code_reason("TCP create",  tcp->sock);
+    if (tcp->sock < 0)
+    {
+        _get_socket_error_code_reason("TCP create", tcp->sock);
         return ESP_FAIL;
     }
 
@@ -108,16 +114,21 @@ static esp_err_t _tcp_open(audio_element_handle_t self)
 static esp_err_t _tcp_read(audio_element_handle_t self, char *buffer, int len, TickType_t ticks_to_wait, void *context)
 {
     tcp_stream_t *tcp = (tcp_stream_t *)audio_element_getdata(self);
-    audio_element_info_t info = { 0 };
+    audio_element_info_t info = {0};
 
     int rlen = esp_transport_read(tcp->t, buffer, len, tcp->timeout_ms);
     ESP_LOGD(TAG, "read len=%d, rlen=%d, pos=%d", len, rlen, (int)info.byte_pos);
-    if (rlen < 0) {
+    if (rlen < 0)
+    {
         _get_socket_error_code_reason("TCP read", tcp->sock);
         return ESP_FAIL;
-    } else if (rlen == 0) {
+    }
+    else if (rlen == 0)
+    {
         ESP_LOGI(TAG, "Get end of the file");
-    } else {
+    }
+    else
+    {
         audio_element_getinfo(self, &info);
         info.byte_pos += rlen;
         audio_element_setinfo(self, &info);
@@ -130,11 +141,13 @@ static esp_err_t _tcp_write(audio_element_handle_t self, char *buffer, int len, 
     tcp_stream_t *tcp = (tcp_stream_t *)audio_element_getdata(self);
     audio_element_info_t info;
     int wlen = esp_transport_write(tcp->t, buffer, len, tcp->timeout_ms);
-    if (wlen < 0) {
+    if (wlen < 0)
+    {
         _get_socket_error_code_reason("TCP write", tcp->sock);
         return ESP_FAIL;
     }
-    ESP_LOGD(TAG, "read len=%d, wlen=%d pos=%d", len, wlen, (int)info.byte_pos);
+    ESP_LOGD(TAG, "read len=%d, wlen=%d ", len, wlen);
+    //ESP_LOGD(TAG, "read len=%d, wlen=%d pos=%d", len, wlen, (int)info.byte_pos);
     return wlen;
 }
 
@@ -142,13 +155,16 @@ static esp_err_t _tcp_process(audio_element_handle_t self, char *in_buffer, int 
 {
     int r_size = audio_element_input(self, in_buffer, in_len);
     int w_size = 0;
-    audio_element_info_t info = { 0 };
+    audio_element_info_t info = {0};
     audio_element_getinfo(self, &info);
     info.byte_pos += r_size;
     audio_element_setinfo(self, &info);
-    if (r_size > 0) {
+    if (r_size > 0)
+    {
         w_size = audio_element_output(self, in_buffer, r_size);
-    } else {
+    }
+    else
+    {
         w_size = r_size;
     }
     return w_size;
@@ -160,16 +176,19 @@ static esp_err_t _tcp_close(audio_element_handle_t self)
 
     tcp_stream_t *tcp = (tcp_stream_t *)audio_element_getdata(self);
     AUDIO_NULL_CHECK(TAG, tcp, return ESP_FAIL);
-    if (!tcp->is_open) {
+    if (!tcp->is_open)
+    {
         ESP_LOGE(TAG, "Already closed");
         return ESP_FAIL;
     }
-    if (-1 == esp_transport_close(tcp->t)) {
+    if (-1 == esp_transport_close(tcp->t))
+    {
         ESP_LOGE(TAG, "TCP stream close failed");
         return ESP_FAIL;
     }
     tcp->is_open = false;
-    if (AEL_STATE_PAUSED != audio_element_get_state(self)) {
+    if (AEL_STATE_PAUSED != audio_element_get_state(self))
+    {
         audio_element_info_t info = {0};
         audio_element_getinfo(self, &info);
         info.byte_pos = 0;
@@ -184,7 +203,8 @@ static esp_err_t _tcp_destroy(audio_element_handle_t self)
 
     tcp_stream_t *tcp = (tcp_stream_t *)audio_element_getdata(self);
     AUDIO_NULL_CHECK(TAG, tcp, return ESP_FAIL);
-    if (tcp->t) {
+    if (tcp->t)
+    {
         esp_transport_destroy(tcp->t);
         tcp->t = NULL;
     }
@@ -207,10 +227,11 @@ audio_element_handle_t tcp_stream_init(tcp_stream_cfg_t *config)
     cfg.task_core = config->task_core;
     cfg.stack_in_ext = config->ext_stack;
     cfg.tag = "tcp_client";
-    if (cfg.buffer_len == 0) {
+    if (cfg.buffer_len == 0)
+    {
         cfg.buffer_len = TCP_STREAM_BUF_SIZE;
     }
-    
+
     tcp_stream_t *tcp = audio_calloc(1, sizeof(tcp_stream_t));
     AUDIO_MEM_CHECK(TAG, tcp, return NULL);
 
@@ -218,16 +239,21 @@ audio_element_handle_t tcp_stream_init(tcp_stream_cfg_t *config)
     tcp->port = config->port;
     tcp->host = config->host;
     tcp->timeout_ms = config->timeout_ms;
-    if (config->event_handler) {
+    if (config->event_handler)
+    {
         tcp->hook = config->event_handler;
-        if (config->event_ctx) {
+        if (config->event_ctx)
+        {
             tcp->ctx = config->event_ctx;
         }
     }
 
-    if (config->type == AUDIO_STREAM_WRITER) {
+    if (config->type == AUDIO_STREAM_WRITER)
+    {
         cfg.write = _tcp_write;
-    } else {
+    }
+    else
+    {
         cfg.read = _tcp_read;
     }
 
